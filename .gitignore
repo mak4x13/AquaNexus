@@ -1,3 +1,15 @@
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Backend
+backend/.venv/
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+
 # Python
 __pycache__/
 *.py[cod]
@@ -13,3 +25,6 @@ build/
 .mypy_cache/
 .idea/
 .vscode/
+
+# Misc
+.DS_Store

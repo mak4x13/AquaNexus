@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  background-color: #020617;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
+
+.glass-panel {
+  @apply rounded-3xl border border-white/10 bg-white/5 shadow-glass backdrop-blur-glass;
+}
+
+.panel-grid {
+  background-image: radial-gradient(circle at 2px 2px, rgba(148, 163, 184, 0.22) 1px, transparent 0);
+  background-size: 28px 28px;
+}
+
+.soft-divider {
+  @apply border-t border-white/10;
+}
