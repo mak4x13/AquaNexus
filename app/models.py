@@ -22,6 +22,7 @@ class SimulationConfig(BaseModel):
     rainfall_std: float = Field(default=5.0, ge=0)
     drought_prob: float = Field(default=0.1, ge=0, le=1)
     drought_multiplier: float = Field(default=0.5, ge=0, le=1)
+    drought_demand_reduction: float = Field(default=0.25, ge=0, le=1)
 
     conveyance_loss_rate: float = Field(default=0.0, ge=0, le=0.95)
 
@@ -117,6 +118,7 @@ class NegotiationRequest(BaseModel):
     context: Optional[Dict[str, object]] = None
     model: Optional[str] = None
     temperature: float = Field(default=0.2, ge=0, le=2)
+    dry_run: bool = False
 
 
 class NegotiationResponse(BaseModel):
@@ -130,11 +132,43 @@ class PolicyBriefRequest(BaseModel):
     focus: Optional[str] = None
     model: Optional[str] = None
     temperature: float = Field(default=0.2, ge=0, le=2)
+    dry_run: bool = False
 
 
 class PolicyBriefResponse(BaseModel):
     model: str
     content: str
+
+
+class AgentProfile(BaseModel):
+    id: str = Field(min_length=1)
+    role: Literal["farm", "reservoir", "policy", "climate", "observer"]
+    goal: str = Field(min_length=1)
+    constraints: Optional[List[str]] = None
+
+
+class AgentTurn(BaseModel):
+    round: int
+    agent_id: str
+    role: str
+    message: str
+
+
+class MultiAgentNegotiationRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    agents: List[AgentProfile]
+    rounds: int = Field(default=3, ge=1, le=10)
+    context: Optional[Dict[str, object]] = None
+    region: Optional[str] = None
+    model: Optional[str] = None
+    temperature: float = Field(default=0.3, ge=0, le=2)
+    dry_run: bool = False
+
+
+class MultiAgentNegotiationResponse(BaseModel):
+    model: str
+    transcript: List[AgentTurn]
+    agreement: Optional[str] = None
 
 
 class PresetResponse(BaseModel):

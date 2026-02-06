@@ -114,6 +114,13 @@ def _compute_release(total_demand: float, reservoir: float, max_allocation: floa
     return release, delivered
 
 
+def _effective_demand(farm: FarmConfig, drought: bool, config: SimulationConfig) -> float:
+    if not drought or config.drought_demand_reduction <= 0:
+        return farm.base_demand
+    reduction = min(1.0, max(0.0, config.drought_demand_reduction * farm.resilience))
+    return max(0.0, farm.base_demand * (1 - reduction))
+
+
 def _simulate_policy(
     farms: List[FarmConfig],
     config: SimulationConfig,
@@ -137,7 +144,7 @@ def _simulate_policy(
         if drought:
             max_allocation *= config.drought_multiplier
 
-        demands = [farm.base_demand for farm in farms]
+        demands = [_effective_demand(farm, drought, config) for farm in farms]
         total_demand = sum(demands)
 
         release, delivered = _compute_release(

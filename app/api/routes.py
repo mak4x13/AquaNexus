@@ -3,6 +3,9 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 
 from app.models import (
+    AgentTurn,
+    MultiAgentNegotiationRequest,
+    MultiAgentNegotiationResponse,
     NegotiationRequest,
     NegotiationResponse,
     PolicyBriefRequest,
@@ -13,7 +16,11 @@ from app.models import (
     StressTestRequest,
     StressTestResponse,
 )
-from app.services.groq_client import generate_negotiation, generate_policy_brief
+from app.services.groq_client import (
+    generate_multiagent_transcript,
+    generate_negotiation,
+    generate_policy_brief,
+)
 from app.services.presets import list_presets
 from app.services.simulation import run_simulation, run_stress_test
 
@@ -55,6 +62,7 @@ def negotiate(request: NegotiationRequest) -> NegotiationResponse:
             context=request.context,
             model=request.model,
             temperature=request.temperature,
+            dry_run=request.dry_run,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -62,6 +70,20 @@ def negotiate(request: NegotiationRequest) -> NegotiationResponse:
         raise HTTPException(status_code=502, detail="Groq request failed.") from exc
 
     return NegotiationResponse(model=model, content=content)
+
+
+@router.post("/negotiate/multi", response_model=MultiAgentNegotiationResponse)
+def negotiate_multi(request: MultiAgentNegotiationRequest) -> MultiAgentNegotiationResponse:
+    try:
+        data, model = generate_multiagent_transcript(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Groq request failed.") from exc
+
+    transcript = [AgentTurn(**turn) for turn in data.get("transcript", [])]
+    agreement = data.get("agreement")
+    return MultiAgentNegotiationResponse(model=model, transcript=transcript, agreement=agreement)
 
 
 @router.post("/policy/brief", response_model=PolicyBriefResponse)
@@ -73,6 +95,7 @@ def policy_brief(request: PolicyBriefRequest) -> PolicyBriefResponse:
             focus=request.focus,
             model=request.model,
             temperature=request.temperature,
+            dry_run=request.dry_run,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

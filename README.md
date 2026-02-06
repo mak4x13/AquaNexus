@@ -15,6 +15,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 - `POST /simulate`
 - `POST /stress-test`
 - `POST /negotiate`
+- `POST /negotiate/multi`
 - `POST /policy/brief`
 
 **Sample Simulate Request**
@@ -35,6 +36,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
     "rainfall_std": 6,
     "drought_prob": 0.1,
     "drought_multiplier": 0.5,
+    "drought_demand_reduction": 0.25,
     "conveyance_loss_rate": 0.25,
     "sustainability_threshold": 0.2,
     "alpha": 1.0,
@@ -79,6 +81,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
     "rainfall_std": 6,
     "drought_prob": 0.1,
     "drought_multiplier": 0.5,
+    "drought_demand_reduction": 0.25,
     "conveyance_loss_rate": 0.25,
     "sustainability_threshold": 0.2,
     "alpha": 1.0,
@@ -100,7 +103,25 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 }
 ```
 
+**Sample Multi-Agent Negotiation Request**
+```json
+{
+  "prompt": "Negotiate a drought water-sharing plan.",
+  "region": "Pakistan",
+  "rounds": 3,
+  "agents": [
+    {"id": "farm-1", "role": "farm", "goal": "Protect wheat yields", "constraints": ["limited storage"]},
+    {"id": "farm-2", "role": "farm", "goal": "Maintain rice allocation", "constraints": ["high water demand"]},
+    {"id": "reservoir", "role": "reservoir", "goal": "Keep reservoir above safety threshold"},
+    {"id": "policy", "role": "policy", "goal": "Ensure equity for tail-end users"}
+  ],
+  "dry_run": true
+}
+```
+
 **Notes**
 - `policy` supports `fair`, `equal`, and `proportional`.
 - `compare_policies` returns baseline comparisons for quick demo charts.
 - `conveyance_loss_rate` models canal and distribution losses (set to 0 for none).
+- `drought_demand_reduction` uses farm `resilience` to reduce demand during droughts.
+- LLM endpoints accept `dry_run: true` to avoid external API calls during testing.

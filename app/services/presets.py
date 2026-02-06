@@ -6,10 +6,10 @@ from app.models import FarmConfig, PresetResponse, SimulationConfig, SimulationR
 def list_presets() -> List[PresetResponse]:
     pakistan_request = SimulationRequest(
         farms=[
-            FarmConfig(id="pk-wheat", crop_type="wheat", base_demand=35, yield_a=7.5),
-            FarmConfig(id="pk-rice", crop_type="rice", base_demand=60, yield_a=9.5),
-            FarmConfig(id="pk-cotton", crop_type="cotton", base_demand=45, yield_a=8.0),
-            FarmConfig(id="pk-sugarcane", crop_type="sugarcane", base_demand=70, yield_a=10.0),
+            FarmConfig(id="pk-wheat", crop_type="wheat", base_demand=35, yield_a=7.5, resilience=0.55),
+            FarmConfig(id="pk-rice", crop_type="rice", base_demand=60, yield_a=9.5, resilience=0.35),
+            FarmConfig(id="pk-cotton", crop_type="cotton", base_demand=45, yield_a=8.0, resilience=0.45),
+            FarmConfig(id="pk-sugarcane", crop_type="sugarcane", base_demand=70, yield_a=10.0, resilience=0.25),
         ],
         config=SimulationConfig(
             days=30,
@@ -21,6 +21,7 @@ def list_presets() -> List[PresetResponse]:
             rainfall_std=6,
             drought_prob=0.15,
             drought_multiplier=0.5,
+            drought_demand_reduction=0.3,
             conveyance_loss_rate=0.25,
             sustainability_threshold=0.2,
             alpha=1.0,
