@@ -11,6 +11,10 @@ from app.models import (
     SimulationResponse,
     SimulationResult,
     SimulationSummary,
+    StressMetric,
+    StressTestRequest,
+    StressTestResponse,
+    StressTestSummary,
 )
 
 ClimateDay = Tuple[float, bool]
@@ -94,6 +98,22 @@ def _allocate_water(
     return _redistribute_leftover(allocations, demands, available)
 
 
+def _compute_release(total_demand: float, reservoir: float, max_allocation: float, loss_rate: float) -> Tuple[float, float]:
+    release_cap = min(max_allocation, reservoir)
+    if release_cap <= 0:
+        return 0.0, 0.0
+    if loss_rate >= 1:
+        return release_cap, 0.0
+
+    deliverable_cap = release_cap * (1 - loss_rate)
+    if total_demand <= deliverable_cap:
+        release = total_demand / (1 - loss_rate) if total_demand > 0 else 0.0
+    else:
+        release = release_cap
+    delivered = release * (1 - loss_rate)
+    return release, delivered
+
+
 def _simulate_policy(
     farms: List[FarmConfig],
     config: SimulationConfig,
@@ -117,12 +137,21 @@ def _simulate_policy(
         if drought:
             max_allocation *= config.drought_multiplier
 
-        available = min(max_allocation, reservoir)
         demands = [farm.base_demand for farm in farms]
-        allocations = _allocate_water(demands, available, policy, config.fairness_weight)
+        total_demand = sum(demands)
+
+        release, delivered = _compute_release(
+            total_demand=total_demand,
+            reservoir=reservoir,
+            max_allocation=max_allocation,
+            loss_rate=config.conveyance_loss_rate,
+        )
+        conveyance_loss = max(0.0, release - delivered)
+
+        allocations = _allocate_water(demands, delivered, policy, config.fairness_weight)
 
         total_allocated = sum(allocations)
-        reservoir = max(0.0, reservoir - total_allocated)
+        reservoir = max(0.0, reservoir - release)
 
         yields = []
         for i, farm in enumerate(farms):
@@ -151,6 +180,7 @@ def _simulate_policy(
                 reservoir_end=reservoir,
                 total_allocated=total_allocated,
                 total_yield=total_yield,
+                conveyance_loss=conveyance_loss,
                 gini=gini,
                 depletion_risk=depletion_risk,
                 score=score,
@@ -162,6 +192,7 @@ def _simulate_policy(
     avg_depletion = sum(day.depletion_risk for day in daily) / days
     total_yield = sum(day.total_yield for day in daily)
     sustainability_score = max(0.0, 1.0 - avg_depletion)
+    total_conveyance_loss = sum(day.conveyance_loss for day in daily)
 
     summary = SimulationSummary(
         policy=policy,
@@ -170,6 +201,7 @@ def _simulate_policy(
         avg_depletion_risk=avg_depletion,
         final_reservoir=reservoir,
         sustainability_score=sustainability_score,
+        total_conveyance_loss=total_conveyance_loss,
     )
 
     farm_summaries: List[FarmSummary] = []
@@ -191,6 +223,29 @@ def _simulate_policy(
     return SimulationResult(summary=summary, daily=daily, farms=farm_summaries)
 
 
+def _quantile(values: Sequence[float], q: float) -> float:
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    pos = (len(sorted_vals) - 1) * q
+    lower = int(math.floor(pos))
+    upper = int(math.ceil(pos))
+    if lower == upper:
+        return sorted_vals[lower]
+    weight = pos - lower
+    return sorted_vals[lower] * (1 - weight) + sorted_vals[upper] * weight
+
+
+def _build_metric(values: Sequence[float]) -> StressMetric:
+    return StressMetric(
+        mean=sum(values) / len(values) if values else 0.0,
+        p10=_quantile(values, 0.1),
+        p90=_quantile(values, 0.9),
+        min=min(values) if values else 0.0,
+        max=max(values) if values else 0.0,
+    )
+
+
 def run_simulation(request: SimulationRequest) -> SimulationResponse:
     if not request.farms:
         raise ValueError("At least one farm is required.")
@@ -208,3 +263,46 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
             comparisons.append(_simulate_policy(request.farms, request.config, policy, climate_series))
 
     return SimulationResponse(primary=primary, comparisons=comparisons)
+
+
+def run_stress_test(request: StressTestRequest) -> StressTestResponse:
+    if not request.farms:
+        raise ValueError("At least one farm is required.")
+    if request.config.initial_reservoir > request.config.reservoir_capacity:
+        raise ValueError("initial_reservoir cannot exceed reservoir_capacity.")
+
+    if request.config.seed is None:
+        rng = random.Random()
+        seeds = [rng.randint(0, 1_000_000_000) for _ in range(request.runs)]
+    else:
+        seeds = [request.config.seed + i for i in range(request.runs)]
+
+    total_yield_vals: List[float] = []
+    avg_gini_vals: List[float] = []
+    avg_depletion_vals: List[float] = []
+    final_reservoir_vals: List[float] = []
+
+    for seed in seeds:
+        config = request.config.model_copy(update={"seed": seed})
+        climate_series = _generate_climate_series(config)
+        result = _simulate_policy(request.farms, config, request.policy, climate_series)
+        summary = result.summary
+        total_yield_vals.append(summary.total_yield)
+        avg_gini_vals.append(summary.avg_gini)
+        avg_depletion_vals.append(summary.avg_depletion_risk)
+        final_reservoir_vals.append(summary.final_reservoir)
+
+    threshold = request.config.sustainability_threshold * request.config.reservoir_capacity
+    below_threshold = sum(1 for val in final_reservoir_vals if val < threshold)
+    prob_below_threshold = below_threshold / len(final_reservoir_vals) if final_reservoir_vals else 0.0
+
+    summary = StressTestSummary(
+        runs=request.runs,
+        total_yield=_build_metric(total_yield_vals),
+        avg_gini=_build_metric(avg_gini_vals),
+        avg_depletion_risk=_build_metric(avg_depletion_vals),
+        final_reservoir=_build_metric(final_reservoir_vals),
+        prob_below_threshold=prob_below_threshold,
+    )
+
+    return StressTestResponse(summary=summary)

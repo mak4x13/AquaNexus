@@ -11,8 +11,11 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 
 **Endpoints**
 - `GET /health`
+- `GET /presets`
 - `POST /simulate`
+- `POST /stress-test`
 - `POST /negotiate`
+- `POST /policy/brief`
 
 **Sample Simulate Request**
 ```json
@@ -32,6 +35,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
     "rainfall_std": 6,
     "drought_prob": 0.1,
     "drought_multiplier": 0.5,
+    "conveyance_loss_rate": 0.25,
     "sustainability_threshold": 0.2,
     "alpha": 1.0,
     "beta": 1.0,
@@ -58,6 +62,45 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 }
 ```
 
+**Sample Stress Test Request**
+```json
+{
+  "farms": [
+    {"id": "farm-1", "crop_type": "wheat", "base_demand": 40, "yield_a": 8},
+    {"id": "farm-2", "crop_type": "rice", "base_demand": 55, "yield_a": 10}
+  ],
+  "config": {
+    "days": 30,
+    "reservoir_capacity": 1200,
+    "initial_reservoir": 800,
+    "max_daily_allocation": 140,
+    "rainfall_prob": 0.3,
+    "rainfall_mean": 20,
+    "rainfall_std": 6,
+    "drought_prob": 0.1,
+    "drought_multiplier": 0.5,
+    "conveyance_loss_rate": 0.25,
+    "sustainability_threshold": 0.2,
+    "alpha": 1.0,
+    "beta": 1.0,
+    "fairness_weight": 0.6,
+    "seed": 42
+  },
+  "policy": "fair",
+  "runs": 50
+}
+```
+
+**Sample Policy Brief Request**
+```json
+{
+  "simulation": { "primary": { "summary": {}, "daily": [], "farms": [] }, "comparisons": [] },
+  "region": "Pakistan",
+  "focus": "Tail-end equity and drought resilience"
+}
+```
+
 **Notes**
 - `policy` supports `fair`, `equal`, and `proportional`.
 - `compare_policies` returns baseline comparisons for quick demo charts.
+- `conveyance_loss_rate` models canal and distribution losses (set to 0 for none).

@@ -1,8 +1,21 @@
+from typing import List
+
 from fastapi import APIRouter, HTTPException
 
-from app.models import NegotiationRequest, NegotiationResponse, SimulationRequest, SimulationResponse
-from app.services.groq_client import generate_negotiation
-from app.services.simulation import run_simulation
+from app.models import (
+    NegotiationRequest,
+    NegotiationResponse,
+    PolicyBriefRequest,
+    PolicyBriefResponse,
+    PresetResponse,
+    SimulationRequest,
+    SimulationResponse,
+    StressTestRequest,
+    StressTestResponse,
+)
+from app.services.groq_client import generate_negotiation, generate_policy_brief
+from app.services.presets import list_presets
+from app.services.simulation import run_simulation, run_stress_test
 
 
 router = APIRouter()
@@ -13,10 +26,23 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@router.get("/presets", response_model=List[PresetResponse])
+def presets() -> List[PresetResponse]:
+    return list_presets()
+
+
 @router.post("/simulate", response_model=SimulationResponse)
 def simulate(request: SimulationRequest) -> SimulationResponse:
     try:
         return run_simulation(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/stress-test", response_model=StressTestResponse)
+def stress_test(request: StressTestRequest) -> StressTestResponse:
+    try:
+        return run_stress_test(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -36,3 +62,21 @@ def negotiate(request: NegotiationRequest) -> NegotiationResponse:
         raise HTTPException(status_code=502, detail="Groq request failed.") from exc
 
     return NegotiationResponse(model=model, content=content)
+
+
+@router.post("/policy/brief", response_model=PolicyBriefResponse)
+def policy_brief(request: PolicyBriefRequest) -> PolicyBriefResponse:
+    try:
+        content, model = generate_policy_brief(
+            simulation=request.simulation,
+            region=request.region,
+            focus=request.focus,
+            model=request.model,
+            temperature=request.temperature,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Groq request failed.") from exc
+
+    return PolicyBriefResponse(model=model, content=content)

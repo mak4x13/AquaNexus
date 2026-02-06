@@ -23,6 +23,8 @@ class SimulationConfig(BaseModel):
     drought_prob: float = Field(default=0.1, ge=0, le=1)
     drought_multiplier: float = Field(default=0.5, ge=0, le=1)
 
+    conveyance_loss_rate: float = Field(default=0.0, ge=0, le=0.95)
+
     sustainability_threshold: float = Field(default=0.2, ge=0, le=1)
     alpha: float = Field(default=1.0, ge=0)
     beta: float = Field(default=1.0, ge=0)
@@ -55,6 +57,7 @@ class DayMetrics(BaseModel):
     reservoir_end: float
     total_allocated: float
     total_yield: float
+    conveyance_loss: float
     gini: float
     depletion_risk: float
     score: float
@@ -67,6 +70,7 @@ class SimulationSummary(BaseModel):
     avg_depletion_risk: float
     final_reservoir: float
     sustainability_score: float
+    total_conveyance_loss: float
 
 
 class SimulationResult(BaseModel):
@@ -80,6 +84,34 @@ class SimulationResponse(BaseModel):
     comparisons: List[SimulationResult] = Field(default_factory=list)
 
 
+class StressMetric(BaseModel):
+    mean: float
+    p10: float
+    p90: float
+    min: float
+    max: float
+
+
+class StressTestSummary(BaseModel):
+    runs: int
+    total_yield: StressMetric
+    avg_gini: StressMetric
+    avg_depletion_risk: StressMetric
+    final_reservoir: StressMetric
+    prob_below_threshold: float
+
+
+class StressTestRequest(BaseModel):
+    farms: List[FarmConfig]
+    config: SimulationConfig
+    policy: Literal["fair", "equal", "proportional"] = "fair"
+    runs: int = Field(default=50, ge=1, le=500)
+
+
+class StressTestResponse(BaseModel):
+    summary: StressTestSummary
+
+
 class NegotiationRequest(BaseModel):
     prompt: str = Field(min_length=1)
     context: Optional[Dict[str, object]] = None
@@ -90,3 +122,23 @@ class NegotiationRequest(BaseModel):
 class NegotiationResponse(BaseModel):
     model: str
     content: str
+
+
+class PolicyBriefRequest(BaseModel):
+    simulation: SimulationResponse
+    region: str = "Pakistan"
+    focus: Optional[str] = None
+    model: Optional[str] = None
+    temperature: float = Field(default=0.2, ge=0, le=2)
+
+
+class PolicyBriefResponse(BaseModel):
+    model: str
+    content: str
+
+
+class PresetResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    request: SimulationRequest
