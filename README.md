@@ -22,9 +22,9 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 ```json
 {
   "farms": [
-    {"id": "farm-1", "crop_type": "wheat", "base_demand": 40, "yield_a": 8},
-    {"id": "farm-2", "crop_type": "rice", "base_demand": 55, "yield_a": 10},
-    {"id": "farm-3", "crop_type": "maize", "base_demand": 30, "yield_a": 7}
+    {"id": "farm-1", "crop_type": "wheat", "base_demand": 40, "yield_a": 8, "province": "Punjab"},
+    {"id": "farm-2", "crop_type": "rice", "base_demand": 55, "yield_a": 10, "province": "Sindh"},
+    {"id": "farm-3", "crop_type": "maize", "base_demand": 30, "yield_a": 7, "province": "Punjab"}
   ],
   "config": {
     "days": 30,
@@ -38,13 +38,20 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
     "drought_multiplier": 0.5,
     "drought_demand_reduction": 0.25,
     "conveyance_loss_rate": 0.25,
+    "groundwater_capacity": 300,
+    "initial_groundwater": 200,
+    "max_groundwater_pumping": 20,
+    "groundwater_recharge": 3,
+    "groundwater_penalty_weight": 0.5,
     "sustainability_threshold": 0.2,
     "alpha": 1.0,
     "beta": 1.0,
     "fairness_weight": 0.6,
+    "province_quotas": { "Punjab": 0.55, "Sindh": 0.45 },
+    "quota_mode": "share",
     "seed": 42
   },
-  "policy": "fair",
+  "policy": "quota",
   "compare_policies": true
 }
 ```
@@ -83,6 +90,11 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
     "drought_multiplier": 0.5,
     "drought_demand_reduction": 0.25,
     "conveyance_loss_rate": 0.25,
+    "groundwater_capacity": 300,
+    "initial_groundwater": 200,
+    "max_groundwater_pumping": 20,
+    "groundwater_recharge": 3,
+    "groundwater_penalty_weight": 0.5,
     "sustainability_threshold": 0.2,
     "alpha": 1.0,
     "beta": 1.0,
@@ -120,8 +132,10 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 ```
 
 **Notes**
-- `policy` supports `fair`, `equal`, and `proportional`.
+- `policy` supports `fair`, `equal`, `proportional`, and `quota`.
 - `compare_policies` returns baseline comparisons for quick demo charts.
 - `conveyance_loss_rate` models canal and distribution losses (set to 0 for none).
 - `drought_demand_reduction` uses farm `resilience` to reduce demand during droughts.
 - LLM endpoints accept `dry_run: true` to avoid external API calls during testing.
+- For `quota`, each farm must include `province`, and `province_quotas` must be set.
+- Groundwater fields let you model pumping buffer and penalty.

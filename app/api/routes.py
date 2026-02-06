@@ -67,7 +67,7 @@ def negotiate(request: NegotiationRequest) -> NegotiationResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Groq request failed.") from exc
+        raise HTTPException(status_code=502, detail=f"Groq request failed: {exc}") from exc
 
     return NegotiationResponse(model=model, content=content)
 
@@ -79,7 +79,7 @@ def negotiate_multi(request: MultiAgentNegotiationRequest) -> MultiAgentNegotiat
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Groq request failed.") from exc
+        raise HTTPException(status_code=502, detail=f"Groq request failed: {exc}") from exc
 
     transcript = [AgentTurn(**turn) for turn in data.get("transcript", [])]
     agreement = data.get("agreement")
@@ -100,6 +100,6 @@ def policy_brief(request: PolicyBriefRequest) -> PolicyBriefResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Groq request failed.") from exc
+        raise HTTPException(status_code=502, detail=f"Groq request failed: {exc}") from exc
 
     return PolicyBriefResponse(model=model, content=content)

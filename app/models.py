@@ -9,6 +9,7 @@ class FarmConfig(BaseModel):
     base_demand: float = Field(ge=0)
     yield_a: float = Field(default=1.0, ge=0)
     resilience: float = Field(default=0.5, ge=0, le=1)
+    province: Optional[str] = None
 
 
 class SimulationConfig(BaseModel):
@@ -30,13 +31,23 @@ class SimulationConfig(BaseModel):
     alpha: float = Field(default=1.0, ge=0)
     beta: float = Field(default=1.0, ge=0)
     fairness_weight: float = Field(default=0.5, ge=0, le=1)
+
+    province_quotas: Optional[Dict[str, float]] = None
+    quota_mode: Literal["share", "absolute"] = "share"
+
+    groundwater_capacity: float = Field(default=0.0, ge=0)
+    initial_groundwater: float = Field(default=0.0, ge=0)
+    max_groundwater_pumping: float = Field(default=0.0, ge=0)
+    groundwater_recharge: float = Field(default=0.0, ge=0)
+    groundwater_penalty_weight: float = Field(default=0.0, ge=0)
+
     seed: Optional[int] = None
 
 
 class SimulationRequest(BaseModel):
     farms: List[FarmConfig]
     config: SimulationConfig
-    policy: Literal["fair", "equal", "proportional"] = "fair"
+    policy: Literal["fair", "equal", "proportional", "quota"] = "fair"
     compare_policies: bool = True
 
 
@@ -56,9 +67,11 @@ class DayMetrics(BaseModel):
     drought: bool
     reservoir_start: float
     reservoir_end: float
+    groundwater_end: float
     total_allocated: float
     total_yield: float
     conveyance_loss: float
+    groundwater_used: float
     gini: float
     depletion_risk: float
     score: float
@@ -70,8 +83,10 @@ class SimulationSummary(BaseModel):
     avg_gini: float
     avg_depletion_risk: float
     final_reservoir: float
+    final_groundwater: float
     sustainability_score: float
     total_conveyance_loss: float
+    total_groundwater_used: float
 
 
 class SimulationResult(BaseModel):
@@ -99,13 +114,15 @@ class StressTestSummary(BaseModel):
     avg_gini: StressMetric
     avg_depletion_risk: StressMetric
     final_reservoir: StressMetric
+    final_groundwater: StressMetric
+    total_groundwater_used: StressMetric
     prob_below_threshold: float
 
 
 class StressTestRequest(BaseModel):
     farms: List[FarmConfig]
     config: SimulationConfig
-    policy: Literal["fair", "equal", "proportional"] = "fair"
+    policy: Literal["fair", "equal", "proportional", "quota"] = "fair"
     runs: int = Field(default=50, ge=1, le=500)
 
 

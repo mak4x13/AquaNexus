@@ -1,6 +1,6 @@
 import math
 import random
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from app.models import (
     DayMetrics,
@@ -98,6 +98,56 @@ def _allocate_water(
     return _redistribute_leftover(allocations, demands, available)
 
 
+def _normalize_quotas(quotas: Dict[str, float]) -> Dict[str, float]:
+    total = sum(max(0.0, value) for value in quotas.values())
+    if total <= 0:
+        raise ValueError("province_quotas must contain positive values.")
+    return {key: max(0.0, value) / total for key, value in quotas.items()}
+
+
+def _allocate_with_quota(
+    farms: List[FarmConfig],
+    demands: List[float],
+    available: float,
+    config: SimulationConfig,
+) -> List[float]:
+    if not config.province_quotas:
+        raise ValueError("province_quotas must be provided for quota policy.")
+
+    provinces = []
+    for farm in farms:
+        if not farm.province:
+            raise ValueError("All farms must include a province for quota policy.")
+        provinces.append(farm.province)
+
+    allocations = [0.0] * len(farms)
+
+    if config.quota_mode == "share":
+        shares = _normalize_quotas(config.province_quotas)
+        province_caps = {prov: available * shares.get(prov, 0.0) for prov in set(provinces)}
+    else:
+        total_quota = sum(max(0.0, value) for value in config.province_quotas.values())
+        if total_quota <= 0:
+            raise ValueError("province_quotas must contain positive values.")
+        scale = min(1.0, available / total_quota) if total_quota > 0 else 0.0
+        province_caps = {
+            prov: max(0.0, config.province_quotas.get(prov, 0.0)) * scale
+            for prov in set(provinces)
+        }
+
+    for province in set(provinces):
+        indices = [i for i, prov in enumerate(provinces) if prov == province]
+        if not indices:
+            continue
+        province_demands = [demands[i] for i in indices]
+        cap = province_caps.get(province, 0.0)
+        province_allocs = _allocate_water(province_demands, cap, "fair", config.fairness_weight)
+        for idx, alloc in zip(indices, province_allocs):
+            allocations[idx] = alloc
+
+    return _redistribute_leftover(allocations, demands, available)
+
+
 def _compute_release(total_demand: float, reservoir: float, max_allocation: float, loss_rate: float) -> Tuple[float, float]:
     release_cap = min(max_allocation, reservoir)
     if release_cap <= 0:
@@ -121,6 +171,15 @@ def _effective_demand(farm: FarmConfig, drought: bool, config: SimulationConfig)
     return max(0.0, farm.base_demand * (1 - reduction))
 
 
+def _allocate_groundwater(unmet: List[float], available: float) -> List[float]:
+    if available <= 0:
+        return [0.0] * len(unmet)
+    total_unmet = sum(unmet)
+    if total_unmet <= 0:
+        return [0.0] * len(unmet)
+    return [available * demand / total_unmet for demand in unmet]
+
+
 def _simulate_policy(
     farms: List[FarmConfig],
     config: SimulationConfig,
@@ -130,15 +189,23 @@ def _simulate_policy(
     capacity = config.reservoir_capacity
     reservoir = min(config.initial_reservoir, capacity)
 
+    groundwater_capacity = config.groundwater_capacity
+    groundwater = min(config.initial_groundwater, groundwater_capacity)
+
     farm_alloc_total = [0.0] * len(farms)
     farm_yield_total = [0.0] * len(farms)
     unmet_demand_total = [0.0] * len(farms)
+
+    total_conveyance_loss = 0.0
+    total_groundwater_used = 0.0
 
     daily: List[DayMetrics] = []
 
     for day_index, (rainfall, drought) in enumerate(climate_series, 1):
         reservoir_start = reservoir
         reservoir = min(capacity, reservoir + rainfall)
+
+        groundwater = min(groundwater_capacity, groundwater + config.groundwater_recharge)
 
         max_allocation = config.max_daily_allocation
         if drought:
@@ -154,8 +221,27 @@ def _simulate_policy(
             loss_rate=config.conveyance_loss_rate,
         )
         conveyance_loss = max(0.0, release - delivered)
+        total_conveyance_loss += conveyance_loss
 
-        allocations = _allocate_water(demands, delivered, policy, config.fairness_weight)
+        if policy == "quota":
+            allocations_surface = _allocate_with_quota(farms, demands, delivered, config)
+        else:
+            allocations_surface = _allocate_water(demands, delivered, policy, config.fairness_weight)
+
+        unmet = [max(0.0, demand - alloc) for demand, alloc in zip(demands, allocations_surface)]
+
+        groundwater_used = 0.0
+        allocations_ground = [0.0] * len(farms)
+        if config.max_groundwater_pumping > 0 and groundwater > 0 and sum(unmet) > 0:
+            available_gw = min(config.max_groundwater_pumping, groundwater)
+            groundwater_used = min(available_gw, sum(unmet))
+            allocations_ground = _allocate_groundwater(unmet, groundwater_used)
+            groundwater = max(0.0, groundwater - groundwater_used)
+            total_groundwater_used += groundwater_used
+
+        allocations = [
+            surface + ground for surface, ground in zip(allocations_surface, allocations_ground)
+        ]
 
         total_allocated = sum(allocations)
         reservoir = max(0.0, reservoir - release)
@@ -176,7 +262,12 @@ def _simulate_policy(
         if threshold > 0 and reservoir < threshold:
             depletion_risk = (threshold - reservoir) / threshold
 
-        score = total_yield - config.alpha * depletion_risk - config.beta * gini
+        groundwater_penalty = 0.0
+        if config.groundwater_penalty_weight > 0:
+            denom = groundwater_capacity if groundwater_capacity > 0 else 1.0
+            groundwater_penalty = config.groundwater_penalty_weight * (groundwater_used / denom)
+
+        score = total_yield - config.alpha * depletion_risk - config.beta * gini - groundwater_penalty
 
         daily.append(
             DayMetrics(
@@ -185,9 +276,11 @@ def _simulate_policy(
                 drought=drought,
                 reservoir_start=reservoir_start,
                 reservoir_end=reservoir,
+                groundwater_end=groundwater,
                 total_allocated=total_allocated,
                 total_yield=total_yield,
                 conveyance_loss=conveyance_loss,
+                groundwater_used=groundwater_used,
                 gini=gini,
                 depletion_risk=depletion_risk,
                 score=score,
@@ -199,7 +292,6 @@ def _simulate_policy(
     avg_depletion = sum(day.depletion_risk for day in daily) / days
     total_yield = sum(day.total_yield for day in daily)
     sustainability_score = max(0.0, 1.0 - avg_depletion)
-    total_conveyance_loss = sum(day.conveyance_loss for day in daily)
 
     summary = SimulationSummary(
         policy=policy,
@@ -207,8 +299,10 @@ def _simulate_policy(
         avg_gini=avg_gini,
         avg_depletion_risk=avg_depletion,
         final_reservoir=reservoir,
+        final_groundwater=groundwater,
         sustainability_score=sustainability_score,
         total_conveyance_loss=total_conveyance_loss,
+        total_groundwater_used=total_groundwater_used,
     )
 
     farm_summaries: List[FarmSummary] = []
@@ -258,6 +352,8 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
         raise ValueError("At least one farm is required.")
     if request.config.initial_reservoir > request.config.reservoir_capacity:
         raise ValueError("initial_reservoir cannot exceed reservoir_capacity.")
+    if request.config.initial_groundwater > request.config.groundwater_capacity:
+        raise ValueError("initial_groundwater cannot exceed groundwater_capacity.")
 
     climate_series = _generate_climate_series(request.config)
     primary = _simulate_policy(request.farms, request.config, request.policy, climate_series)
@@ -277,6 +373,8 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
         raise ValueError("At least one farm is required.")
     if request.config.initial_reservoir > request.config.reservoir_capacity:
         raise ValueError("initial_reservoir cannot exceed reservoir_capacity.")
+    if request.config.initial_groundwater > request.config.groundwater_capacity:
+        raise ValueError("initial_groundwater cannot exceed groundwater_capacity.")
 
     if request.config.seed is None:
         rng = random.Random()
@@ -288,6 +386,8 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
     avg_gini_vals: List[float] = []
     avg_depletion_vals: List[float] = []
     final_reservoir_vals: List[float] = []
+    final_groundwater_vals: List[float] = []
+    total_groundwater_used_vals: List[float] = []
 
     for seed in seeds:
         config = request.config.model_copy(update={"seed": seed})
@@ -298,6 +398,8 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
         avg_gini_vals.append(summary.avg_gini)
         avg_depletion_vals.append(summary.avg_depletion_risk)
         final_reservoir_vals.append(summary.final_reservoir)
+        final_groundwater_vals.append(summary.final_groundwater)
+        total_groundwater_used_vals.append(summary.total_groundwater_used)
 
     threshold = request.config.sustainability_threshold * request.config.reservoir_capacity
     below_threshold = sum(1 for val in final_reservoir_vals if val < threshold)
@@ -309,6 +411,8 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
         avg_gini=_build_metric(avg_gini_vals),
         avg_depletion_risk=_build_metric(avg_depletion_vals),
         final_reservoir=_build_metric(final_reservoir_vals),
+        final_groundwater=_build_metric(final_groundwater_vals),
+        total_groundwater_used=_build_metric(total_groundwater_used_vals),
         prob_below_threshold=prob_below_threshold,
     )
 
