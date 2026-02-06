@@ -6,7 +6,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 1. `python -m venv .venv`
 2. `.\.venv\Scripts\Activate.ps1`
 3. `pip install -r requirements.txt`
-4. Set `GROQ_API_KEY` in `.env` (see `.env.example`).
+4. Set `GROQ_API_KEY` in `.env`.
 5. `uvicorn app.main:app --reload`
 
 **Endpoints**
