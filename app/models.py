@@ -47,7 +47,7 @@ class SimulationConfig(BaseModel):
 class SimulationRequest(BaseModel):
     farms: List[FarmConfig]
     config: SimulationConfig
-    policy: Literal["fair", "equal", "proportional", "quota"] = "fair"
+    policy: Literal["fair", "equal", "proportional", "quota", "pakistan-quota"] = "fair"
     compare_policies: bool = True
 
 
@@ -122,7 +122,7 @@ class StressTestSummary(BaseModel):
 class StressTestRequest(BaseModel):
     farms: List[FarmConfig]
     config: SimulationConfig
-    policy: Literal["fair", "equal", "proportional", "quota"] = "fair"
+    policy: Literal["fair", "equal", "proportional", "quota", "pakistan-quota"] = "fair"
     runs: int = Field(default=50, ge=1, le=500)
 
 
@@ -176,6 +176,8 @@ class MultiAgentNegotiationRequest(BaseModel):
     agents: List[AgentProfile]
     rounds: int = Field(default=3, ge=1, le=10)
     context: Optional[Dict[str, object]] = None
+    simulation: Optional[SimulationResponse] = None
+    auto_agents: bool = False
     region: Optional[str] = None
     model: Optional[str] = None
     temperature: float = Field(default=0.3, ge=0, le=2)

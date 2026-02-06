@@ -81,4 +81,13 @@ def list_presets() -> List[PresetResponse]:
             ),
             request=pakistan_request,
         )
+        ,
+        PresetResponse(
+            id="pk-irrigation-auto-quota",
+            name="Pakistan Irrigation (Auto Quota)",
+            description=(
+                "Pakistan policy layer with inter-provincial quotas derived automatically from farm provinces."
+            ),
+            request=pakistan_request.model_copy(update={"policy": "pakistan-quota"}),
+        )
     ]

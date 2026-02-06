@@ -324,6 +324,23 @@ def _simulate_policy(
     return SimulationResult(summary=summary, daily=daily, farms=farm_summaries)
 
 
+def _apply_pakistan_quota_defaults(
+    farms: List[FarmConfig],
+    config: SimulationConfig,
+) -> SimulationConfig:
+    if config.province_quotas:
+        return config
+
+    provinces = [farm.province for farm in farms if farm.province]
+    if not provinces:
+        raise ValueError("province is required on farms for pakistan-quota policy.")
+
+    unique = sorted(set(provinces))
+    share = 1.0 / len(unique)
+    quotas = {province: share for province in unique}
+    return config.model_copy(update={"province_quotas": quotas, "quota_mode": "share"})
+
+
 def _quantile(values: Sequence[float], q: float) -> float:
     if not values:
         return 0.0
@@ -355,15 +372,21 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
     if request.config.initial_groundwater > request.config.groundwater_capacity:
         raise ValueError("initial_groundwater cannot exceed groundwater_capacity.")
 
-    climate_series = _generate_climate_series(request.config)
-    primary = _simulate_policy(request.farms, request.config, request.policy, climate_series)
+    policy = request.policy
+    config = request.config
+    if policy == "pakistan-quota":
+        config = _apply_pakistan_quota_defaults(request.farms, config)
+        policy = "quota"
+
+    climate_series = _generate_climate_series(config)
+    primary = _simulate_policy(request.farms, config, policy, climate_series)
 
     comparisons: List[SimulationResult] = []
     if request.compare_policies:
         for policy in ["equal", "proportional", "fair"]:
-            if policy == request.policy:
+            if policy == request.policy or request.policy == "pakistan-quota":
                 continue
-            comparisons.append(_simulate_policy(request.farms, request.config, policy, climate_series))
+            comparisons.append(_simulate_policy(request.farms, config, policy, climate_series))
 
     return SimulationResponse(primary=primary, comparisons=comparisons)
 
@@ -376,11 +399,17 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
     if request.config.initial_groundwater > request.config.groundwater_capacity:
         raise ValueError("initial_groundwater cannot exceed groundwater_capacity.")
 
-    if request.config.seed is None:
+    policy = request.policy
+    config = request.config
+    if policy == "pakistan-quota":
+        config = _apply_pakistan_quota_defaults(request.farms, config)
+        policy = "quota"
+
+    if config.seed is None:
         rng = random.Random()
         seeds = [rng.randint(0, 1_000_000_000) for _ in range(request.runs)]
     else:
-        seeds = [request.config.seed + i for i in range(request.runs)]
+        seeds = [config.seed + i for i in range(request.runs)]
 
     total_yield_vals: List[float] = []
     avg_gini_vals: List[float] = []
@@ -390,9 +419,9 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
     total_groundwater_used_vals: List[float] = []
 
     for seed in seeds:
-        config = request.config.model_copy(update={"seed": seed})
-        climate_series = _generate_climate_series(config)
-        result = _simulate_policy(request.farms, config, request.policy, climate_series)
+        config_run = config.model_copy(update={"seed": seed})
+        climate_series = _generate_climate_series(config_run)
+        result = _simulate_policy(request.farms, config_run, policy, climate_series)
         summary = result.summary
         total_yield_vals.append(summary.total_yield)
         avg_gini_vals.append(summary.avg_gini)

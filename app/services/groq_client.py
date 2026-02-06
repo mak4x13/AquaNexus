@@ -2,16 +2,26 @@ import json
 from typing import Dict, List, Optional, Tuple
 
 from groq import Groq
+from groq.types.chat import ChatCompletionMessageParam
 
 from app.config import settings
 from app.models import MultiAgentNegotiationRequest, SimulationResponse
 
 
-_client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else Groq()
+_client: Optional[Groq] = None
 
 
-def _build_messages(prompt: str, context: Optional[Dict[str, object]]) -> List[Dict[str, str]]:
-    messages = [{"role": "user", "content": prompt}]
+def _get_client() -> Groq:
+    if not settings.groq_api_key:
+        raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+    global _client
+    if _client is None:
+        _client = Groq(api_key=settings.groq_api_key)
+    return _client
+
+
+def _build_messages(prompt: str, context: Optional[Dict[str, object]]) -> List[ChatCompletionMessageParam]:
+    messages: List[ChatCompletionMessageParam] = [{"role": "user", "content": prompt}]
     if context:
         context_blob = json.dumps(context, indent=2)
         messages.append({"role": "user", "content": f"Context:\n{context_blob}"})
@@ -106,16 +116,16 @@ def generate_negotiation(
 ) -> Tuple[str, str]:
     if dry_run:
         return "Dry run enabled. No Groq call was made.", "dry-run"
-    if not settings.groq_api_key:
-        raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+    client = _get_client()
 
     messages = _build_messages(prompt, context)
-    completion = _client.chat.completions.create(
+    completion = client.chat.completions.create(
         model=model or settings.groq_model,
         messages=messages,
         temperature=temperature,
     )
-    return completion.choices[0].message.content, completion.model
+    content = completion.choices[0].message.content or ""
+    return content, completion.model
 
 
 def generate_policy_brief(
@@ -128,8 +138,7 @@ def generate_policy_brief(
 ) -> Tuple[str, str]:
     if dry_run:
         return "Dry run enabled. Provide simulation data to generate a policy brief.", "dry-run"
-    if not settings.groq_api_key:
-        raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+    client = _get_client()
 
     focus_line = focus or "Balance yield, equity, and sustainability."
     prompt = (
@@ -140,18 +149,19 @@ def generate_policy_brief(
     )
 
     context = _policy_context(simulation)
-    messages = [
+    messages: List[ChatCompletionMessageParam] = [
         {"role": "system", "content": "You are a concise policy analyst."},
         {"role": "user", "content": prompt},
         {"role": "user", "content": f"Context:\n{json.dumps(context, indent=2)}"},
     ]
 
-    completion = _client.chat.completions.create(
+    completion = client.chat.completions.create(
         model=model or settings.groq_model,
         messages=messages,
         temperature=temperature,
     )
-    return completion.choices[0].message.content, completion.model
+    content = completion.choices[0].message.content or ""
+    return content, completion.model
 
 
 def generate_multiagent_transcript(
@@ -159,8 +169,7 @@ def generate_multiagent_transcript(
 ) -> Tuple[Dict[str, object], str]:
     if request.dry_run:
         return _dry_run_transcript(request), "dry-run"
-    if not settings.groq_api_key:
-        raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+    client = _get_client()
 
     agent_context = [agent.model_dump() for agent in request.agents]
     payload = {
@@ -180,17 +189,18 @@ def generate_multiagent_transcript(
         "Keep each message under 60 words. Ensure fairness and sustainability themes are explicit."
     )
 
-    messages = [
+    messages: List[ChatCompletionMessageParam] = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_prompt},
         {"role": "user", "content": f"Context:\n{json.dumps(payload, indent=2)}"},
     ]
 
-    completion = _client.chat.completions.create(
+    completion = client.chat.completions.create(
         model=request.model or settings.groq_model,
         messages=messages,
         temperature=request.temperature,
     )
 
-    data = _parse_json_response(completion.choices[0].message.content)
+    content = completion.choices[0].message.content or ""
+    data = _parse_json_response(content)
     return data, completion.model
