@@ -32,6 +32,14 @@ export type ClimateState = {
   rainfall_probability: number;
   drought_risk: number;
   forecast: ClimatePoint[];
+  source?: string;
+  provinceWeather?: Array<{
+    province: string;
+    city: string;
+    temperature_c: number;
+    precipitation_mm: number;
+    drought_risk: number;
+  }>;
 };
 
 export type MetricsState = {
@@ -59,6 +67,20 @@ export type FlowState = {
   edges: FlowEdge[];
 };
 
+export type LiveReservoirSnapshot = {
+  source: string;
+  updated_at_pkt?: string | null;
+  fetched_at_utc: string;
+  notes: string[];
+  stations: Array<{
+    dam: string;
+    inflow_cusecs: number;
+    outflow_cusecs: number;
+    current_level_ft?: number | null;
+    estimated_storage_maf?: number | null;
+  }>;
+};
+
 export type DashboardState = {
   day: number;
   scenario: string;
@@ -69,4 +91,18 @@ export type DashboardState = {
   climate: ClimateState;
   metrics: MetricsState;
   flow: FlowState;
+  liveReservoir?: LiveReservoirSnapshot;
+  dailySignals: Array<{
+    day: number;
+    rainfall: number;
+    drought: boolean;
+    total_allocated: number;
+    depletion_risk: number;
+    gini: number;
+  }>;
+  objective: {
+    purpose: string;
+    beneficiaries: string[];
+    scalePath: string[];
+  };
 };

@@ -18,6 +18,12 @@ from app.models import (
 )
 
 ClimateDay = Tuple[float, bool]
+PAKISTAN_PROVINCES = {
+    "Punjab",
+    "Sindh",
+    "Khyber Pakhtunkhwa",
+    "Balochistan",
+}
 
 
 def _generate_climate_series(config: SimulationConfig) -> List[ClimateDay]:
@@ -30,6 +36,34 @@ def _generate_climate_series(config: SimulationConfig) -> List[ClimateDay]:
         drought = rng.random() < config.drought_prob
         series.append((rainfall, drought))
     return series
+
+
+def _resolve_climate_series(config: SimulationConfig) -> List[ClimateDay]:
+    base_series = _generate_climate_series(config)
+    external = config.external_inflow_series
+    if not external:
+        return base_series
+
+    if len(external) < config.days:
+        raise ValueError(
+            "external_inflow_series length must be at least equal to config.days."
+        )
+    if any(value < 0 for value in external):
+        raise ValueError("external_inflow_series values must be non-negative.")
+
+    inflow = [float(value) for value in external[: config.days]]
+    baseline = sum(inflow) / len(inflow) if inflow else 0.0
+    drought_threshold = baseline * config.drought_multiplier
+
+    resolved: List[ClimateDay] = []
+    for i, _ in enumerate(base_series):
+        rainfall = inflow[i]
+        if baseline <= 0:
+            drought = True
+        else:
+            drought = rainfall < drought_threshold
+        resolved.append((rainfall, drought))
+    return resolved
 
 
 def _gini_coefficient(values: Sequence[float]) -> float:
@@ -344,9 +378,6 @@ def _apply_pakistan_quota_defaults(
     farms: List[FarmConfig],
     config: SimulationConfig,
 ) -> SimulationConfig:
-    if config.province_quotas:
-        return config
-
     provinces = [farm.province for farm in farms]
     if not any(provinces):
         raise ValueError("province is required on farms for pakistan-quota policy.")
@@ -354,6 +385,26 @@ def _apply_pakistan_quota_defaults(
         raise ValueError("All farms must include province for pakistan-quota policy.")
 
     unique = sorted({province for province in provinces if province is not None})
+    invalid = [province for province in unique if province not in PAKISTAN_PROVINCES]
+    if invalid:
+        invalid_list = ", ".join(invalid)
+        raise ValueError(
+            "pakistan-quota policy only supports Punjab, Sindh, Khyber Pakhtunkhwa, "
+            f"and Balochistan. Invalid province(s): {invalid_list}."
+        )
+
+    if config.province_quotas:
+        invalid_quota_keys = sorted(
+            province for province in config.province_quotas if province not in PAKISTAN_PROVINCES
+        )
+        if invalid_quota_keys:
+            invalid_list = ", ".join(invalid_quota_keys)
+            raise ValueError(
+                "province_quotas contains invalid province(s) for pakistan-quota policy: "
+                f"{invalid_list}."
+            )
+        return config
+
     share = 1.0 / len(unique)
     quotas = {province: share for province in unique}
     return config.model_copy(update={"province_quotas": quotas, "quota_mode": "share"})
@@ -395,7 +446,7 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
         config = _apply_pakistan_quota_defaults(request.farms, config)
         policy = "quota"
 
-    climate_series = _generate_climate_series(config)
+    climate_series = _resolve_climate_series(config)
     primary = _simulate_policy(request.farms, config, policy, climate_series)
 
     comparisons: List[SimulationResult] = []
@@ -437,7 +488,7 @@ def run_stress_test(request: StressTestRequest) -> StressTestResponse:
 
     for seed in seeds:
         config_run = config.model_copy(update={"seed": seed})
-        climate_series = _generate_climate_series(config_run)
+        climate_series = _resolve_climate_series(config_run)
         result = _simulate_policy(request.farms, config_run, policy, climate_series)
         summary = result.summary
         total_yield_vals.append(summary.total_yield)

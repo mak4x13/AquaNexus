@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchLlmHealth } from "@/lib/api";
 import GlassPanel from "./GlassPanel";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -10,12 +11,20 @@ type EndpointStatus = "online" | "offline" | "checking";
 type StatusState = {
   health: EndpointStatus;
   presets: EndpointStatus;
+  weather: EndpointStatus;
+  damsLive: EndpointStatus;
+  llm: EndpointStatus;
+  llmDetail: string | null;
   updatedAt: string | null;
 };
 
 const initialState: StatusState = {
   health: "checking",
   presets: "checking",
+  weather: "checking",
+  damsLive: "checking",
+  llm: "checking",
+  llmDetail: null,
   updatedAt: null
 };
 
@@ -52,7 +61,14 @@ export default function ControlSurface() {
     const controller = new AbortController();
 
     const check = async () => {
-      setStatus((prev) => ({ ...prev, health: "checking", presets: "checking" }));
+      setStatus((prev) => ({
+        ...prev,
+        health: "checking",
+        presets: "checking",
+        weather: "checking",
+        damsLive: "checking",
+        llm: "checking"
+      }));
 
       const health: Promise<EndpointStatus> = fetch(`${API_BASE_URL}/health`, { signal: controller.signal })
         .then((res): EndpointStatus => (res.ok ? "online" : "offline"))
@@ -62,11 +78,30 @@ export default function ControlSurface() {
         .then((res): EndpointStatus => (res.ok ? "online" : "offline"))
         .catch((): EndpointStatus => "offline");
 
-      const [healthStatus, presetsStatus] = await Promise.all([health, presets]);
+      const weather: Promise<EndpointStatus> = fetch(`${API_BASE_URL}/weather/pakistan`, { signal: controller.signal })
+        .then((res): EndpointStatus => (res.ok ? "online" : "offline"))
+        .catch((): EndpointStatus => "offline");
+
+      const damsLive: Promise<EndpointStatus> = fetch(`${API_BASE_URL}/data/dams/pakistan-live`, { signal: controller.signal })
+        .then((res): EndpointStatus => (res.ok ? "online" : "offline"))
+        .catch((): EndpointStatus => "offline");
+
+      const llm = fetchLlmHealth(false)
+        .then((res) => ({
+          status: res.key_configured && res.reachable ? ("online" as EndpointStatus) : ("offline" as EndpointStatus),
+          detail: res.detail ?? null
+        }))
+        .catch(() => ({ status: "offline" as EndpointStatus, detail: "Unable to query LLM health endpoint." }));
+
+      const [healthStatus, presetsStatus, weatherStatus, damsLiveStatus, llmStatus] = await Promise.all([health, presets, weather, damsLive, llm]);
       if (!active) return;
       setStatus({
         health: healthStatus,
         presets: presetsStatus,
+        weather: weatherStatus,
+        damsLive: damsLiveStatus,
+        llm: llmStatus.status,
+        llmDetail: llmStatus.detail,
         updatedAt: formatTime(new Date())
       });
     };
@@ -84,6 +119,10 @@ export default function ControlSurface() {
   const restEndpoints: { method: string; path: string; status: EndpointStatus }[] = [
     { method: "GET", path: "/health", status: status.health },
     { method: "GET", path: "/presets", status: status.presets },
+    { method: "GET", path: "/weather/pakistan", status: status.weather },
+    { method: "GET", path: "/data/dams/pakistan-live", status: status.damsLive },
+    { method: "GET", path: "/simulate/pakistan-live", status: status.damsLive },
+    { method: "GET", path: "/llm/health", status: status.llm },
     { method: "POST", path: "/simulate", status: status.health === "online" ? "online" : "offline" },
     { method: "POST", path: "/stress-test", status: status.health === "online" ? "online" : "offline" }
   ];
@@ -98,7 +137,7 @@ export default function ControlSurface() {
     <GlassPanel title="Control Surface" subtitle="Realtime protocol">
       <div className="flex flex-col gap-5 text-sm text-slate-300">
         <p>
-          REST triggers initialize and scenario toggles. Live status updates every 12 seconds.
+          REST triggers initialize and scenario toggles. Pakistan Live mode auto-fetches dam signals. Status updates every 12 seconds.
         </p>
         <div className="grid gap-3">
           {restEndpoints.map((endpoint) => (
@@ -114,7 +153,7 @@ export default function ControlSurface() {
           ))}
         </div>
         <div className="soft-divider pt-4">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">LLM</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">LLM actions</p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-200">
             {llmEndpoints.map((endpoint) => (
               <span key={endpoint.path} className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
@@ -122,6 +161,9 @@ export default function ControlSurface() {
               </span>
             ))}
           </div>
+          {status.llmDetail ? (
+            <p className="mt-3 text-xs text-slate-400">{status.llmDetail}</p>
+          ) : null}
         </div>
         <p className="text-xs text-slate-400">
           Last checked: {status.updatedAt ?? "--"}

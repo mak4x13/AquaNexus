@@ -1,7 +1,7 @@
 import json
 from typing import Dict, List, Optional, Tuple
 
-from groq import Groq
+from groq import APIConnectionError, APIStatusError, AuthenticationError, Groq, RateLimitError
 from groq.types.chat import ChatCompletionMessageParam
 
 from app.config import settings
@@ -16,8 +16,28 @@ def _get_client() -> Groq:
         raise RuntimeError("GROQ_API_KEY is not set in the environment.")
     global _client
     if _client is None:
-        _client = Groq(api_key=settings.groq_api_key)
+        kwargs = {
+            "api_key": settings.groq_api_key,
+            "timeout": settings.groq_timeout_seconds,
+        }
+        if settings.groq_base_url:
+            kwargs["base_url"] = settings.groq_base_url
+        _client = Groq(**kwargs)
     return _client
+
+
+def _format_groq_error(exc: Exception) -> str:
+    if isinstance(exc, AuthenticationError):
+        return "Groq authentication failed. Check GROQ_API_KEY."
+    if isinstance(exc, RateLimitError):
+        return "Groq rate limit reached. Retry in a moment."
+    if isinstance(exc, APIConnectionError):
+        return (
+            "Unable to reach Groq API. Check internet, firewall/proxy, and TLS settings."
+        )
+    if isinstance(exc, APIStatusError):
+        return f"Groq API returned status {exc.status_code}."
+    return str(exc)
 
 
 def _build_messages(prompt: str, context: Optional[Dict[str, object]]) -> List[ChatCompletionMessageParam]:
@@ -117,15 +137,17 @@ def generate_negotiation(
     if dry_run:
         return "Dry run enabled. No Groq call was made.", "dry-run"
     client = _get_client()
-
-    messages = _build_messages(prompt, context)
-    completion = client.chat.completions.create(
-        model=model or settings.groq_model,
-        messages=messages,
-        temperature=temperature,
-    )
-    content = completion.choices[0].message.content or ""
-    return content, completion.model
+    try:
+        messages = _build_messages(prompt, context)
+        completion = client.chat.completions.create(
+            model=model or settings.groq_model,
+            messages=messages,
+            temperature=temperature,
+        )
+        content = completion.choices[0].message.content or ""
+        return content, completion.model
+    except Exception as exc:
+        raise RuntimeError(_format_groq_error(exc)) from exc
 
 
 def generate_policy_brief(
@@ -155,13 +177,16 @@ def generate_policy_brief(
         {"role": "user", "content": f"Context:\n{json.dumps(context, indent=2)}"},
     ]
 
-    completion = client.chat.completions.create(
-        model=model or settings.groq_model,
-        messages=messages,
-        temperature=temperature,
-    )
-    content = completion.choices[0].message.content or ""
-    return content, completion.model
+    try:
+        completion = client.chat.completions.create(
+            model=model or settings.groq_model,
+            messages=messages,
+            temperature=temperature,
+        )
+        content = completion.choices[0].message.content or ""
+        return content, completion.model
+    except Exception as exc:
+        raise RuntimeError(_format_groq_error(exc)) from exc
 
 
 def generate_multiagent_transcript(
@@ -195,12 +220,51 @@ def generate_multiagent_transcript(
         {"role": "user", "content": f"Context:\n{json.dumps(payload, indent=2)}"},
     ]
 
-    completion = client.chat.completions.create(
-        model=request.model or settings.groq_model,
-        messages=messages,
-        temperature=request.temperature,
-    )
+    try:
+        completion = client.chat.completions.create(
+            model=request.model or settings.groq_model,
+            messages=messages,
+            temperature=request.temperature,
+        )
 
-    content = completion.choices[0].message.content or ""
-    data = _parse_json_response(content)
-    return data, completion.model
+        content = completion.choices[0].message.content or ""
+        data = _parse_json_response(content)
+        return data, completion.model
+    except Exception as exc:
+        raise RuntimeError(_format_groq_error(exc)) from exc
+
+
+def check_llm_health(probe: bool = False, model: Optional[str] = None) -> Dict[str, object]:
+    key_configured = bool(settings.groq_api_key)
+    active_model = model or settings.groq_model
+    result = {
+        "key_configured": key_configured,
+        "model": active_model,
+        "probe_attempted": probe,
+        "reachable": False,
+        "detail": None,
+    }
+
+    if not key_configured:
+        result["detail"] = "GROQ_API_KEY is not configured."
+        return result
+
+    if not probe:
+        result["reachable"] = True
+        result["detail"] = "Configuration present. Set probe=true to test network/API."
+        return result
+
+    try:
+        client = _get_client()
+        completion = client.chat.completions.create(
+            model=active_model,
+            messages=[{"role": "user", "content": "Reply with: ok"}],
+            temperature=0,
+            max_tokens=8,
+        )
+        result["reachable"] = True
+        result["detail"] = f"Groq reachable. Response model: {completion.model}."
+        return result
+    except Exception as exc:
+        result["detail"] = _format_groq_error(exc)
+        return result

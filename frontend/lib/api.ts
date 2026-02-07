@@ -34,6 +34,7 @@ export type SimulationRequest = {
     max_groundwater_pumping: number;
     groundwater_recharge: number;
     groundwater_penalty_weight: number;
+    external_inflow_series?: number[];
     seed?: number;
   };
   policy: ScenarioPolicy;
@@ -81,6 +82,54 @@ export type SimulationResponse = {
   comparisons: Array<unknown>;
 };
 
+export type LlmHealthResponse = {
+  key_configured: boolean;
+  model: string;
+  probe_attempted: boolean;
+  reachable: boolean;
+  detail?: string | null;
+};
+
+export type ProvinceWeather = {
+  province: "Punjab" | "Sindh" | "Khyber Pakhtunkhwa" | "Balochistan";
+  city: string;
+  latitude: number;
+  longitude: number;
+  temperature_c: number;
+  precipitation_mm: number;
+  windspeed_kmh: number;
+  drought_risk: number;
+};
+
+export type PakistanWeatherResponse = {
+  source: string;
+  timestamp_utc: string;
+  provinces: ProvinceWeather[];
+};
+
+export type LiveDamStation = {
+  dam: string;
+  inflow_cusecs: number;
+  outflow_cusecs: number;
+  current_level_ft?: number | null;
+  estimated_storage_maf?: number | null;
+};
+
+export type PakistanLiveDamResponse = {
+  source: string;
+  source_url: string;
+  fetched_at_utc: string;
+  updated_at_pkt?: string | null;
+  stations: LiveDamStation[];
+  notes: string[];
+};
+
+export type PakistanLiveSimulationResponse = {
+  live_data: PakistanLiveDamResponse;
+  request: SimulationRequest;
+  simulation: SimulationResponse;
+};
+
 export type PresetResponse = {
   id: string;
   name: string;
@@ -108,39 +157,39 @@ export const scenarioPolicyMap: Record<string, ScenarioPolicy> = {
 const farmProfiles: FarmProfile[] = [
   {
     id: "farm-1",
-    name: "Delta Orchards",
+    name: "Punjab Wheat Cluster",
     crop_type: "wheat",
-    base_demand: 40,
+    base_demand: 42,
     yield_a: 8,
     resilience: 0.62,
     province: "Punjab"
   },
   {
     id: "farm-2",
-    name: "Sierra Co-op",
+    name: "Sindh Rice Corridor",
     crop_type: "rice",
-    base_demand: 55,
+    base_demand: 58,
     yield_a: 10,
-    resilience: 0.5,
+    resilience: 0.42,
     province: "Sindh"
   },
   {
     id: "farm-3",
-    name: "Highland Fields",
+    name: "KP Maize Belt",
     crop_type: "maize",
-    base_demand: 30,
-    yield_a: 7,
-    resilience: 0.68,
-    province: "Punjab"
+    base_demand: 34,
+    yield_a: 7.8,
+    resilience: 0.55,
+    province: "Khyber Pakhtunkhwa"
   },
   {
     id: "farm-4",
-    name: "Crescent Farms",
-    crop_type: "cotton",
-    base_demand: 35,
-    yield_a: 9,
-    resilience: 0.58,
-    province: "Sindh"
+    name: "Balochistan Orchard Zone",
+    crop_type: "orchard",
+    base_demand: 26,
+    yield_a: 6.8,
+    resilience: 0.66,
+    province: "Balochistan"
   }
 ];
 
@@ -160,7 +209,12 @@ const configDefaults: SimulationRequest["config"] = {
   alpha: 1.0,
   beta: 1.0,
   fairness_weight: 0.6,
-  province_quotas: { Punjab: 0.55, Sindh: 0.45 },
+  province_quotas: {
+    Punjab: 0.48,
+    Sindh: 0.38,
+    "Khyber Pakhtunkhwa": 0.09,
+    Balochistan: 0.05
+  },
   quota_mode: "share",
   groundwater_capacity: 300,
   initial_groundwater: 200,
@@ -206,6 +260,54 @@ export const fetchPresets = async (): Promise<PresetResponse[]> => {
     throw new Error(`Preset fetch failed ${response.status}: ${detail}`);
   }
   return response.json() as Promise<PresetResponse[]>;
+};
+
+export const fetchPakistanWeather = async (): Promise<PakistanWeatherResponse> => {
+  const response = await fetch(`${API_BASE_URL}/weather/pakistan`);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Weather fetch failed ${response.status}: ${detail}`);
+  }
+  return response.json() as Promise<PakistanWeatherResponse>;
+};
+
+export const fetchPakistanLiveDamData = async (): Promise<PakistanLiveDamResponse> => {
+  const response = await fetch(`${API_BASE_URL}/data/dams/pakistan-live`);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Live dam fetch failed ${response.status}: ${detail}`);
+  }
+  return response.json() as Promise<PakistanLiveDamResponse>;
+};
+
+export const fetchPakistanLiveSimulation = async (
+  policy: ScenarioPolicy,
+  days = 30,
+  comparePolicies = false
+): Promise<PakistanLiveSimulationResponse> => {
+  const url = new URL(`${API_BASE_URL}/simulate/pakistan-live`);
+  url.searchParams.set("policy", policy);
+  url.searchParams.set("days", String(days));
+  url.searchParams.set("compare_policies", String(comparePolicies));
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Live simulation failed ${response.status}: ${detail}`);
+  }
+  return response.json() as Promise<PakistanLiveSimulationResponse>;
+};
+
+export const fetchLlmHealth = async (probe = false): Promise<LlmHealthResponse> => {
+  const url = new URL(`${API_BASE_URL}/llm/health`);
+  if (probe) {
+    url.searchParams.set("probe", "true");
+  }
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`LLM health fetch failed ${response.status}: ${detail}`);
+  }
+  return response.json() as Promise<LlmHealthResponse>;
 };
 
 export const getPakistanPreset = (presets: PresetResponse[]): SimulationRequest | null => {

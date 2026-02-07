@@ -1,15 +1,21 @@
-from typing import List
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
 from app.models import (
     AgentTurn,
     AgentProfile,
+    DamDataIngestRequest,
+    DamDataIngestResponse,
+    LlmHealthResponse,
+    PakistanLiveDamResponse,
+    PakistanLiveSimulationResponse,
     MultiAgentNegotiationRequest,
     MultiAgentNegotiationResponse,
     NegotiationRequest,
     NegotiationResponse,
+    PakistanWeatherResponse,
     PolicyBriefRequest,
     PolicyBriefResponse,
     PresetResponse,
@@ -18,16 +24,26 @@ from app.models import (
     StressTestRequest,
     StressTestResponse,
 )
+from app.services.dam_data import build_dam_ingest_summary
 from app.services.groq_client import (
+    check_llm_health,
     generate_multiagent_transcript,
     generate_negotiation,
     generate_policy_brief,
 )
+from app.services.pakistan_live import build_pakistan_live_request, fetch_pakistan_live_dams
 from app.services.presets import list_presets
 from app.services.simulation import run_simulation, run_stress_test
+from app.services.weather import get_pakistan_weather
 
 
 router = APIRouter()
+
+
+def _raise_groq_http_error(exc: RuntimeError) -> None:
+    detail = str(exc)
+    status_code = 400 if "GROQ_API_KEY is not set" in detail else 502
+    raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
 def _build_agents_from_simulation(request: MultiAgentNegotiationRequest) -> List[AgentProfile]:
@@ -84,6 +100,64 @@ def presets() -> List[PresetResponse]:
     return list_presets()
 
 
+@router.get("/llm/health", response_model=LlmHealthResponse)
+def llm_health(
+    probe: bool = Query(default=False, description="When true, performs a live Groq API probe."),
+    model: Optional[str] = Query(default=None, description="Optional model override for probe."),
+) -> LlmHealthResponse:
+    return LlmHealthResponse(**check_llm_health(probe=probe, model=model))
+
+
+@router.get("/weather/pakistan", response_model=PakistanWeatherResponse)
+def pakistan_weather() -> PakistanWeatherResponse:
+    return get_pakistan_weather()
+
+
+@router.post("/data/dams/ingest", response_model=DamDataIngestResponse)
+def ingest_dam_data(request: DamDataIngestRequest) -> DamDataIngestResponse:
+    try:
+        return build_dam_ingest_summary(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/data/dams/pakistan-live", response_model=PakistanLiveDamResponse)
+def pakistan_live_dams() -> PakistanLiveDamResponse:
+    try:
+        return fetch_pakistan_live_dams()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/simulate/pakistan-live", response_model=PakistanLiveSimulationResponse)
+def simulate_pakistan_live(
+    policy: Literal["fair", "equal", "proportional", "quota", "pakistan-quota"] = Query(
+        default="pakistan-quota",
+        description="Policy to run on live Pakistan data.",
+    ),
+    days: int = Query(default=30, ge=1, le=365),
+    compare_policies: bool = Query(default=False),
+    maf_to_model_units: float = Query(default=120.0, gt=0),
+) -> PakistanLiveSimulationResponse:
+    try:
+        live_data, request = build_pakistan_live_request(
+            policy=policy,
+            days=days,
+            compare_policies=compare_policies,
+            maf_to_model_units=maf_to_model_units,
+        )
+        simulation = run_simulation(request)
+        return PakistanLiveSimulationResponse(
+            live_data=live_data,
+            request=request,
+            simulation=simulation,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.post("/simulate", response_model=SimulationResponse)
 def simulate(request: SimulationRequest) -> SimulationResponse:
     try:
@@ -111,7 +185,7 @@ def negotiate(request: NegotiationRequest) -> NegotiationResponse:
             dry_run=request.dry_run,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_groq_http_error(exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Groq request failed: {exc}") from exc
 
@@ -127,7 +201,7 @@ def negotiate_multi(request: MultiAgentNegotiationRequest) -> MultiAgentNegotiat
             raise ValueError("agents list cannot be empty unless auto_agents is true.")
         data, model = generate_multiagent_transcript(request)
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_groq_http_error(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -162,7 +236,7 @@ def policy_brief(request: PolicyBriefRequest) -> PolicyBriefResponse:
             dry_run=request.dry_run,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_groq_http_error(exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Groq request failed: {exc}") from exc
 

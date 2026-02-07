@@ -1,8 +1,47 @@
 # AquaNexus
 
-AquaNexus is a monorepo with:
-- `backend/`: FastAPI multi-agent water allocation API
-- `frontend/`: Next.js dashboard UI
+AI-assisted water allocation simulation for climate-resilient agriculture in Pakistan.
+
+## Project Goal
+AquaNexus is a decision-support platform, not an autonomous controller.  
+Its goal is to help compare water allocation policies under scarcity and uncertainty by balancing:
+- crop yield
+- fairness across farm/province agents
+- reservoir sustainability
+
+The project is designed for hackathon and policy-prototype use, with a path toward real operational data integration.
+
+## Why This Matters
+Pakistan faces recurring water stress, inter-provincial allocation tension, drought risk, and canal losses.  
+AquaNexus provides a transparent simulation environment so planners can test policy tradeoffs before applying decisions in the real system.
+
+## What It Does Today
+1. Simulates multi-day allocation for farm agents across `Punjab`, `Sindh`, `Khyber Pakhtunkhwa`, and `Balochistan`.
+2. Supports policy modes: `fair`, `equal`, `proportional`, `quota`, `pakistan-quota`.
+3. Computes core metrics: total yield, Gini fairness index, depletion risk, sustainability score, groundwater/conveyance impact.
+4. Exposes LLM endpoints for negotiation draft generation, multi-agent transcript generation, and policy brief generation.
+5. Shows live weather feed for provinces with safe fallback values when the weather API is unavailable.
+6. Auto-ingests latest FFD river-state dam signals and runs live Pakistan simulation without manual payload entry.
+
+## What Is Real vs Simulated
+`Simulated`: reservoir dynamics, farm demand/yield curves, policy allocation outcomes, and projected multi-day inflow sequence.  
+`Real/External`: live dam inflow/outflow/current-level signals from FFD river-state, weather data from Open-Meteo via `GET /weather/pakistan`, and Groq LLM responses when `dry_run=false` and network access works.
+
+If weather API is unreachable, fallback weather values are used so the app remains functional.
+
+## Agent Model
+`Climate agent`: provides rainfall/drought signals to simulation.  
+`Reservoir agent`: enforces release/storage constraints and tracks depletion.  
+`Policy agent`: applies allocation policy and fairness logic.  
+`Farm agents`: submit demand and convert allocation to yield.  
+`LLM negotiation agents`: produce textual negotiation transcripts/briefs through Groq APIs.
+
+Note: the numeric simulation engine and LLM negotiation layer are currently parallel components.
+
+## Repository Structure
+- `backend/` FastAPI API and simulation engine
+- `frontend/` Next.js dashboard
+- `INTEGRATION_MEMO.md` integration handoff notes
 
 ## Clone
 ```powershell
@@ -16,126 +55,173 @@ cd AquaNexus
 - npm 9+
 
 ## Environment Variables
-Create `.env` at repo root or `backend/.env`:
+Create `.env` at repo root (recommended). `backend/.env` also works.
 
 ```env
 GROQ_API_KEY=your_key_here
 GROQ_MODEL=groq/compound
+GROQ_TIMEOUT_SECONDS=40
+GROQ_BASE_URL=
 ```
 
 Notes:
-- Backend reads `.env` from either `backend/.env` or root `.env`.
-- If `GROQ_API_KEY` is missing, only `dry_run=true` LLM calls should be used.
+- Backend reads `.env` from root `.env` or `backend/.env`.
+- If `GROQ_API_KEY` is missing, use `dry_run=true` for LLM endpoints.
 
-## Backend Setup
+## Setup
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r backend\requirements.txt
+cd frontend
+npm install
 ```
 
 ## Run Backend
 ```powershell
 cd backend
-uvicorn app.main:app --reload
+..\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-API base URL: `http://127.0.0.1:8000`
-Docs: `http://127.0.0.1:8000/docs`
-
-## Frontend Setup
-```powershell
-cd frontend
-npm install
-```
-
-Optional `.env.local`:
-```env
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-```
+Backend URLs:
+- API base: `http://127.0.0.1:8000`
+- Docs: `http://127.0.0.1:8000/docs`
 
 ## Run Frontend
 ```powershell
 cd frontend
-npm run dev
+npm run dev -- -p 3000
 ```
 
-Frontend URL: `http://127.0.0.1:3000`
+Frontend URL:
+- `http://127.0.0.1:3000`
 
-## Backend Endpoints
+Optional `frontend/.env.local`:
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
+
+## API Endpoints
 - `GET /`
 - `GET /health`
 - `GET /presets`
+- `GET /llm/health`
+- `GET /weather/pakistan`
+- `GET /data/dams/pakistan-live`
+- `GET /simulate/pakistan-live`
+- `POST /data/dams/ingest`
 - `POST /simulate`
 - `POST /stress-test`
 - `POST /negotiate`
 - `POST /negotiate/multi`
 - `POST /policy/brief`
 
-### Policy Modes
-`simulate` / `stress-test` support:
-- `fair`
-- `equal`
-- `proportional`
-- `quota`
-- `pakistan-quota`
+## Zero-Manual Live Mode
+You do not need to manually call POST endpoints for normal use.
 
-`pakistan-quota` auto-derives equal shares from farm `province` values when quotas are not supplied.
+1. Start backend + frontend.
+2. Open `http://127.0.0.1:3000`.
+3. Switch data mode to `Pakistan`.
+4. Frontend automatically calls `GET /simulate/pakistan-live` and displays live-driven simulation.
 
-## Sample Simulate Payload
+Direct API quick check:
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/data/dams/pakistan-live"
+Invoke-RestMethod "http://127.0.0.1:8000/simulate/pakistan-live?policy=pakistan-quota&days=30"
+```
+
+## Real Dam Data Ingestion
+Use `POST /data/dams/ingest` with real daily records (for example from IRSA/WAPDA bulletins after conversion to JSON).
+
+Request payload format:
 ```json
 {
-  "farms": [
-    {"id": "farm-1", "crop_type": "wheat", "base_demand": 40, "yield_a": 8, "resilience": 0.6, "province": "Punjab"},
-    {"id": "farm-2", "crop_type": "rice", "base_demand": 55, "yield_a": 10, "resilience": 0.3, "province": "Sindh"},
-    {"id": "farm-3", "crop_type": "cotton", "base_demand": 45, "yield_a": 9, "resilience": 0.5, "province": "Punjab"}
-  ],
-  "config": {
-    "days": 30,
-    "reservoir_capacity": 1200,
-    "initial_reservoir": 800,
-    "max_daily_allocation": 140,
-    "rainfall_prob": 0.3,
-    "rainfall_mean": 20,
-    "rainfall_std": 6,
-    "drought_prob": 0.1,
-    "drought_multiplier": 0.5,
-    "drought_demand_reduction": 0.25,
-    "conveyance_loss_rate": 0.25,
-    "groundwater_capacity": 300,
-    "initial_groundwater": 200,
-    "max_groundwater_pumping": 20,
-    "groundwater_recharge": 3,
-    "groundwater_penalty_weight": 0.5,
-    "sustainability_threshold": 0.2,
-    "alpha": 1.0,
-    "beta": 1.0,
-    "fairness_weight": 0.6,
-    "province_quotas": {"Punjab": 0.55, "Sindh": 0.45},
-    "quota_mode": "share",
-    "seed": 42
-  },
-  "policy": "quota",
-  "compare_policies": true
+  "source": "irsa-bulletin",
+  "maf_to_model_units": 120,
+  "records": [
+    {
+      "date": "2026-01-01",
+      "dam": "Tarbela",
+      "storage_maf": 4.72,
+      "inflow_cusecs": 42100,
+      "outflow_cusecs": 39700
+    },
+    {
+      "date": "2026-01-01",
+      "dam": "Mangla",
+      "storage_maf": 2.95,
+      "inflow_cusecs": 29800,
+      "outflow_cusecs": 25500
+    }
+  ]
 }
 ```
 
-## LLM Testing (Dry Run)
-Use `dry_run: true` for:
-- `POST /negotiate`
-- `POST /negotiate/multi`
-- `POST /policy/brief`
+What this endpoint returns:
+1. Aggregated storage/inflow/outflow summary.
+2. A `suggested_config` object containing:
+- `days`
+- `reservoir_capacity`
+- `initial_reservoir`
+- `max_daily_allocation`
+- `external_inflow_series`
+3. Notes about scaling assumptions.
 
-This verifies end-to-end behavior without external Groq calls.
+How to run simulation with ingested data:
+1. Call `POST /data/dams/ingest`.
+2. Copy `suggested_config` fields into your `/simulate` request `config`.
+3. Ensure `config.days` matches the number of `external_inflow_series` entries you want to use.
 
-## Validation Rules
-- Farm IDs must be unique.
-- `initial_reservoir <= reservoir_capacity`
-- `initial_groundwater <= groundwater_capacity`
-- `quota` policy requires farm `province` + `province_quotas`.
-- `pakistan-quota` requires all farms to have `province`.
+## Quick Validation Checklist
+After starting backend:
 
-## Project Notes
-- Integration notes for frontend consumers are in `INTEGRATION_MEMO.md`.
-- Frontend defaults to backend at `http://localhost:8000`.
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/presets
+Invoke-RestMethod http://127.0.0.1:8000/weather/pakistan
+Invoke-RestMethod "http://127.0.0.1:8000/data/dams/pakistan-live"
+Invoke-RestMethod "http://127.0.0.1:8000/simulate/pakistan-live?policy=pakistan-quota&days=30"
+Invoke-RestMethod "http://127.0.0.1:8000/llm/health"
+Invoke-RestMethod "http://127.0.0.1:8000/llm/health?probe=true"
+```
+
+Quick ingest test:
+```powershell
+$payload = @'
+{
+  "source": "manual-test",
+  "maf_to_model_units": 120,
+  "records": [
+    {"date":"2026-01-01","dam":"Tarbela","storage_maf":4.7,"inflow_cusecs":42000,"outflow_cusecs":39000},
+    {"date":"2026-01-01","dam":"Mangla","storage_maf":2.9,"inflow_cusecs":30000,"outflow_cusecs":26000},
+    {"date":"2026-01-02","dam":"Tarbela","storage_maf":4.8,"inflow_cusecs":43000,"outflow_cusecs":40000},
+    {"date":"2026-01-02","dam":"Mangla","storage_maf":3.0,"inflow_cusecs":31000,"outflow_cusecs":27000}
+  ]
+}
+'@
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/data/dams/ingest" -Method Post -ContentType "application/json" -Body $payload
+```
+
+After starting frontend:
+- Open `http://127.0.0.1:3000`
+- Move reservoir day slider to an earlier day and confirm it stays pinned
+- Click `Jump to latest` and confirm it returns to current day
+- Switch scenario/data mode and confirm cards/metrics update
+
+## Troubleshooting
+1. If `npm run dev -- --port 3000` fails, run `npm run dev -- -p 3000`.
+2. If `GET /llm/health?probe=true` returns unreachable, verify internet access and firewall/proxy/TLS restrictions.
+3. If reservoir reaches `0.0%` early, this can be valid for current demand/release/loss settings; tune `initial_reservoir`, `max_daily_allocation`, rainfall, and loss parameters.
+
+## Current Limitations
+- Core water dynamics are simulation-based, not yet calibrated to real dam operations.
+- Live endpoint currently uses latest available FFD snapshot and projects a multi-day inflow series from that snapshot.
+- Dam ingestion currently expects pre-cleaned JSON records (no direct PDF scraping/CSV parser endpoint yet).
+- No persistent database/history/audit log yet.
+- LLM negotiation is advisory text, not direct optimizer control.
+
+## Next High-Impact Step
+Integrate real Pakistan dam and hydrology data (Tarbela, Mangla, Chashma, inflow/storage series) into simulation initialization and daily constraints.
+
+## Notes
+Frontend defaults to backend at `http://localhost:8000` if `NEXT_PUBLIC_API_BASE_URL` is not set.

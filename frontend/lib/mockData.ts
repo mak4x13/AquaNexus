@@ -30,6 +30,8 @@ export const createInitialState = (): DashboardState => ({
   climate: {
     rainfall_probability: 0.42,
     drought_risk: 0.27,
+    source: "synthetic",
+    provinceWeather: [],
     forecast: [
       { day: "Mon", rainfall_probability: 0.38, drought_risk: 0.32, temperature: 29 },
       { day: "Tue", rainfall_probability: 0.44, drought_risk: 0.3, temperature: 30 },
@@ -61,6 +63,25 @@ export const createInitialState = (): DashboardState => ({
       { from: "hub", to: "f2", intensity: 0.72 },
       { from: "hub", to: "f3", intensity: 0.52 },
       { from: "hub", to: "f4", intensity: 0.6 }
+    ]
+  },
+  dailySignals: [
+    {
+      day: 12,
+      rainfall: 12.4,
+      drought: false,
+      total_allocated: 10.7,
+      depletion_risk: 0.25,
+      gini: 0.18
+    }
+  ],
+  objective: {
+    purpose: "Allocate scarce water fairly while protecting long-term reservoir stability.",
+    beneficiaries: ["Farmers", "Canal tail-end communities", "Provincial planners"],
+    scalePath: [
+      "Integrate district-level crop and canal records",
+      "Connect province dashboards for IRSA-style reviews",
+      "Use seasonal weather feeds for adaptive planning"
     ]
   }
 });
@@ -118,6 +139,17 @@ export const advanceState = (state: DashboardState): DashboardState => {
       sustainability_score: Number(clamp(state.metrics.sustainability_score + jitter(0.05), 0.6, 0.9).toFixed(2)),
       gini_index: Number(clamp(state.metrics.gini_index + jitter(0.03), 0.1, 0.28).toFixed(2)),
       depletion_risk: Number(clamp(state.metrics.depletion_risk + jitter(0.04), 0.18, 0.4).toFixed(2))
-    }
+    },
+    dailySignals: [
+      ...state.dailySignals,
+      {
+        day: state.day + 1,
+        rainfall: Number(inflow.toFixed(1)),
+        drought: drought_risk > 0.45,
+        total_allocated: Number(outflow.toFixed(1)),
+        depletion_risk: Number(clamp(state.metrics.depletion_risk + jitter(0.04), 0.18, 0.4).toFixed(2)),
+        gini: Number(clamp(state.metrics.gini_index + jitter(0.03), 0.1, 0.28).toFixed(2))
+      }
+    ]
   };
 };

@@ -28,6 +28,25 @@ export default function ClimatePanel({ climate }: ClimatePanelProps) {
             <p className="mt-2 text-2xl font-semibold">{formatPct(climate.drought_risk)}</p>
           </div>
         </div>
+        {climate.provinceWeather && climate.provinceWeather.length > 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Pakistan live weather</p>
+              <p className="text-[11px] text-slate-500">{climate.source ?? "simulation"}</p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {climate.provinceWeather.map((row) => (
+                <div key={row.province} className="rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2 text-xs">
+                  <p className="font-semibold text-slate-100">{row.province}</p>
+                  <p className="text-slate-400">{row.city}</p>
+                  <p className="mt-1 text-slate-200">
+                    {row.temperature_c.toFixed(1)} C | {row.precipitation_mm.toFixed(1)} mm rain
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="h-48 rounded-2xl border border-white/10 bg-white/5 p-3">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={climate.forecast} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>

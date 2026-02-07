@@ -9,7 +9,7 @@ def list_presets() -> List[PresetResponse]:
             FarmConfig(
                 id="pk-wheat",
                 crop_type="wheat",
-                base_demand=35,
+                base_demand=42,
                 yield_a=7.5,
                 resilience=0.55,
                 province="Punjab",
@@ -17,26 +17,26 @@ def list_presets() -> List[PresetResponse]:
             FarmConfig(
                 id="pk-rice",
                 crop_type="rice",
-                base_demand=60,
+                base_demand=58,
                 yield_a=9.5,
                 resilience=0.35,
                 province="Sindh",
             ),
             FarmConfig(
-                id="pk-cotton",
-                crop_type="cotton",
-                base_demand=45,
-                yield_a=8.0,
-                resilience=0.45,
-                province="Punjab",
+                id="pk-maize-kp",
+                crop_type="maize",
+                base_demand=34,
+                yield_a=7.8,
+                resilience=0.5,
+                province="Khyber Pakhtunkhwa",
             ),
             FarmConfig(
-                id="pk-sugarcane",
-                crop_type="sugarcane",
-                base_demand=70,
-                yield_a=10.0,
-                resilience=0.25,
-                province="Sindh",
+                id="pk-orchard-balochistan",
+                crop_type="orchard",
+                base_demand=26,
+                yield_a=6.8,
+                resilience=0.62,
+                province="Balochistan",
             ),
         ],
         config=SimulationConfig(
@@ -56,8 +56,10 @@ def list_presets() -> List[PresetResponse]:
             beta=1.0,
             fairness_weight=0.6,
             province_quotas={
-                "Punjab": 0.55,
-                "Sindh": 0.45,
+                "Punjab": 0.48,
+                "Sindh": 0.38,
+                "Khyber Pakhtunkhwa": 0.09,
+                "Balochistan": 0.05,
             },
             quota_mode="share",
             groundwater_capacity=300,
@@ -76,7 +78,7 @@ def list_presets() -> List[PresetResponse]:
             id="pk-irrigation-demo",
             name="Pakistan Irrigation Mix (Demo)",
             description=(
-                "Illustrative crop mix and quota shares inspired by Pakistan's irrigation context. "
+                "Illustrative 4-province crop mix and quota shares inspired by Pakistan's irrigation context. "
                 "Quota values are demo-only and should be tuned with local data."
             ),
             request=pakistan_request,

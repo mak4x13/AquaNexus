@@ -4,11 +4,15 @@ import { clamp } from "./utils";
 import { createInitialState } from "./mockData";
 import {
   buildSimulationRequest,
+  fetchPakistanLiveSimulation,
+  fetchPakistanWeather,
   fetchPresets,
   getPakistanPreset,
   getFarmProfiles,
   runSimulationRequest,
   scenarioPolicyMap,
+  type PakistanLiveDamResponse,
+  type PakistanWeatherResponse,
   type SimulationRequest,
   type SimulationResponse
 } from "./api";
@@ -42,6 +46,33 @@ const deriveClimateForecast = (daily: SimulationResponse["primary"]["daily"]) =>
     rainfall_probability: Number((rainfallHits / recent.length).toFixed(2)),
     drought_risk: Number((droughtHits / recent.length).toFixed(2)),
     forecast
+  };
+};
+
+const buildPakistanClimate = (
+  daily: SimulationResponse["primary"]["daily"],
+  weather: PakistanWeatherResponse | null
+) => {
+  const base = deriveClimateForecast(daily);
+  if (!weather || weather.provinces.length === 0) {
+    return { ...base, source: "simulation", provinceWeather: [] };
+  }
+
+  const avgRain = weather.provinces.reduce((sum, row) => sum + row.precipitation_mm, 0) / weather.provinces.length;
+  const avgRisk = weather.provinces.reduce((sum, row) => sum + row.drought_risk, 0) / weather.provinces.length;
+
+  return {
+    ...base,
+    source: weather.source,
+    rainfall_probability: Number(clamp(avgRain / 12, 0, 1).toFixed(2)),
+    drought_risk: Number(clamp(avgRisk, 0, 1).toFixed(2)),
+    provinceWeather: weather.provinces.map((row) => ({
+      province: row.province,
+      city: row.city,
+      temperature_c: Number(row.temperature_c.toFixed(1)),
+      precipitation_mm: Number(row.precipitation_mm.toFixed(1)),
+      drought_risk: Number(row.drought_risk.toFixed(2))
+    }))
   };
 };
 
@@ -80,7 +111,9 @@ const mapSimulationToDashboard = (
   response: SimulationResponse,
   scenario: string,
   scenarios: string[],
-  request: SimulationRequest
+  request: SimulationRequest,
+  weather: PakistanWeatherResponse | null,
+  liveDamData: PakistanLiveDamResponse | null = null
 ): DashboardState => {
   const base = createInitialState();
   const profiles = getFarmProfiles();
@@ -112,7 +145,7 @@ const mapSimulationToDashboard = (
     };
   });
 
-  const climate = deriveClimateForecast(daily);
+  const climate = buildPakistanClimate(daily, weather);
   const reservoirTimeline = daily.map((day) => ({
     day: day.day,
     reservoir_level: Number(((day.reservoir_end / reservoirCapacity) * 100).toFixed(1)),
@@ -139,7 +172,46 @@ const mapSimulationToDashboard = (
       gini_index: Number(response.primary.summary.avg_gini.toFixed(2)),
       depletion_risk: Number(lastDay.depletion_risk.toFixed(2))
     },
-    flow: buildFlowState(request, farms)
+    flow: buildFlowState(request, farms),
+    liveReservoir: liveDamData
+      ? {
+          source: liveDamData.source,
+          updated_at_pkt: liveDamData.updated_at_pkt ?? null,
+          fetched_at_utc: liveDamData.fetched_at_utc,
+          notes: [...liveDamData.notes],
+          stations: liveDamData.stations.map((station) => ({
+            dam: station.dam,
+            inflow_cusecs: station.inflow_cusecs,
+            outflow_cusecs: station.outflow_cusecs,
+            current_level_ft: station.current_level_ft ?? null,
+            estimated_storage_maf: station.estimated_storage_maf ?? null
+          }))
+        }
+      : undefined,
+    dailySignals: daily.map((day) => ({
+      day: day.day,
+      rainfall: Number(day.rainfall.toFixed(1)),
+      drought: day.drought,
+      total_allocated: Number(day.total_allocated.toFixed(1)),
+      depletion_risk: Number(day.depletion_risk.toFixed(2)),
+      gini: Number(day.gini.toFixed(2))
+    })),
+    objective: {
+      purpose: liveDamData?.updated_at_pkt
+        ? `Help Pakistan allocate scarce water across provinces using live FFD snapshot (${liveDamData.updated_at_pkt}) plus policy simulation.`
+        : "Help Pakistan allocate scarce water across provinces while maximizing yield, equity, and drought resilience.",
+      beneficiaries: [
+        "Farmers with predictable allocations",
+        "Canal tail-end communities with fairer access",
+        "Provincial planners with quantified trade-offs"
+      ],
+      scalePath: [
+        "Connect district canal and crop registries",
+        "Add province-level policy and budget constraints",
+        "Run seasonal planning using live weather forecasts",
+        "Ingest daily FFD/WAPDA records into audited policy workflows"
+      ]
+    }
   };
 };
 
@@ -151,7 +223,8 @@ export const useBackendData = () => {
   const [scenario, setScenario] = useState(base.scenario);
   const [dataMode, setDataMode] = useState<"default" | "pakistan">("default");
   const [pakistanPreset, setPakistanPreset] = useState<SimulationRequest | null>(null);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [weather, setWeather] = useState<PakistanWeatherResponse | null>(null);
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -177,32 +250,75 @@ export const useBackendData = () => {
   useEffect(() => {
     let active = true;
 
+    const loadWeather = async () => {
+      try {
+        const live = await fetchPakistanWeather();
+        if (!active) return;
+        setWeather(live);
+      } catch {
+        if (!active) return;
+        setWeather(null);
+      }
+    };
+
+    loadWeather();
+    const interval = setInterval(loadWeather, 15 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
     const fetchData = async () => {
       setStatus("loading");
       setError(null);
-      const policy = scenarioPolicyMap[scenario] ?? "fair";
-      let request = buildSimulationRequest(policy);
-
-      if (dataMode === "pakistan") {
-        if (!pakistanPreset) {
-          setStatus("error");
-          setError("Pakistan preset not loaded yet.");
-          return;
-        }
-        const pakistanPolicy = scenario === "Equity First" ? "pakistan-quota" : policy;
-        request = {
-          ...pakistanPreset,
-          policy: pakistanPolicy,
-          compare_policies: false
-        };
-      }
-
       try {
-        const response = await runSimulationRequest(request);
+        const policy = scenarioPolicyMap[scenario] ?? "fair";
+        let request = buildSimulationRequest(policy);
+        let response: SimulationResponse;
+        let liveDamData: PakistanLiveDamResponse | null = null;
+
+        if (dataMode === "pakistan") {
+          const pakistanPolicy = scenario === "Equity First" ? "pakistan-quota" : policy;
+          try {
+            const liveResult = await fetchPakistanLiveSimulation(pakistanPolicy, 30, false);
+            request = liveResult.request;
+            response = liveResult.simulation;
+            liveDamData = liveResult.live_data;
+          } catch (liveErr) {
+            if (!pakistanPreset) {
+              throw liveErr;
+            }
+            request = {
+              ...pakistanPreset,
+              policy: pakistanPolicy,
+              compare_policies: false
+            };
+            response = await runSimulationRequest(request);
+            setError("Live dam source unavailable. Showing Pakistan preset fallback.");
+          }
+        } else {
+          response = await runSimulationRequest(request);
+        }
+
         if (!active) return;
-        const mapped = mapSimulationToDashboard(response, scenario, base.scenarios, request);
+        const mapped = mapSimulationToDashboard(
+          response,
+          scenario,
+          base.scenarios,
+          request,
+          weather,
+          liveDamData
+        );
         setData(mapped);
-        setSelectedDayIndex(Math.max(mapped.reservoirTimeline.length - 1, 0));
+        setSelectedDayIndex((prev) => {
+          const latest = Math.max(mapped.reservoirTimeline.length - 1, 0);
+          if (prev === null) return latest;
+          return Math.min(prev, latest);
+        });
         setStatus("idle");
       } catch (err) {
         if (!active) return;
@@ -212,16 +328,22 @@ export const useBackendData = () => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 6000);
+    const intervalMs = dataMode === "pakistan" ? 30000 : 6000;
+    const interval = setInterval(fetchData, intervalMs);
 
     return () => {
       active = false;
       clearInterval(interval);
     };
-  }, [base.scenarios, dataMode, pakistanPreset, scenario]);
+  }, [base.scenarios, dataMode, pakistanPreset, scenario, weather]);
+
+  const updateSelectedDayIndex = (nextIndex: number | null) => {
+    setSelectedDayIndex(nextIndex);
+  };
 
   const updateScenario = (nextScenario: string) => {
     setScenario(nextScenario);
+    setSelectedDayIndex(null);
     setData((prev) => ({ ...prev, scenario: nextScenario }));
   };
 
@@ -236,7 +358,7 @@ export const useBackendData = () => {
     error,
     dataMode,
     setDataMode: updateDataMode,
-    selectedDayIndex,
-    setSelectedDayIndex
+    selectedDayIndex: selectedDayIndex ?? Math.max(data.reservoirTimeline.length - 1, 0),
+    setSelectedDayIndex: updateSelectedDayIndex
   };
 };

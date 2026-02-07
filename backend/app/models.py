@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -41,6 +42,7 @@ class SimulationConfig(BaseModel):
     groundwater_recharge: float = Field(default=0.0, ge=0)
     groundwater_penalty_weight: float = Field(default=0.0, ge=0)
 
+    external_inflow_series: Optional[List[float]] = None
     seed: Optional[int] = None
 
 
@@ -195,3 +197,87 @@ class PresetResponse(BaseModel):
     name: str
     description: str
     request: SimulationRequest
+
+
+class LlmHealthResponse(BaseModel):
+    key_configured: bool
+    model: str
+    probe_attempted: bool
+    reachable: bool
+    detail: Optional[str] = None
+
+
+class ProvinceWeather(BaseModel):
+    province: str
+    city: str
+    latitude: float
+    longitude: float
+    temperature_c: float
+    precipitation_mm: float
+    windspeed_kmh: float
+    drought_risk: float = Field(ge=0, le=1)
+
+
+class PakistanWeatherResponse(BaseModel):
+    source: str
+    timestamp_utc: str
+    provinces: List[ProvinceWeather]
+
+
+class DamDailyRecord(BaseModel):
+    date: date
+    dam: str = Field(min_length=1)
+    storage_maf: float = Field(ge=0)
+    inflow_cusecs: float = Field(ge=0)
+    outflow_cusecs: float = Field(ge=0)
+
+
+class DamDataIngestRequest(BaseModel):
+    source: str = Field(default="manual", min_length=1)
+    records: List[DamDailyRecord] = Field(min_length=1)
+    maf_to_model_units: float = Field(default=120.0, gt=0, le=10000)
+
+
+class DamConfigSuggestion(BaseModel):
+    days: int
+    reservoir_capacity: float
+    initial_reservoir: float
+    max_daily_allocation: float
+    external_inflow_series: List[float]
+    notes: List[str]
+
+
+class DamDataIngestResponse(BaseModel):
+    source: str
+    dams: List[str]
+    date_from: str
+    date_to: str
+    observations: int
+    latest_total_storage_maf: float
+    max_total_storage_maf: float
+    mean_inflow_cusecs: float
+    mean_outflow_cusecs: float
+    suggested_config: DamConfigSuggestion
+
+
+class LiveDamStation(BaseModel):
+    dam: str
+    inflow_cusecs: float = Field(ge=0)
+    outflow_cusecs: float = Field(ge=0)
+    current_level_ft: Optional[float] = Field(default=None, ge=0)
+    estimated_storage_maf: Optional[float] = Field(default=None, ge=0)
+
+
+class PakistanLiveDamResponse(BaseModel):
+    source: str
+    source_url: str
+    fetched_at_utc: str
+    updated_at_pkt: Optional[str] = None
+    stations: List[LiveDamStation]
+    notes: List[str] = Field(default_factory=list)
+
+
+class PakistanLiveSimulationResponse(BaseModel):
+    live_data: PakistanLiveDamResponse
+    request: SimulationRequest
+    simulation: SimulationResponse

@@ -10,7 +10,7 @@ type HeaderProps = {
 
 const dataOptions: Array<{ id: "default" | "pakistan"; label: string }> = [
   { id: "default", label: "Default" },
-  { id: "pakistan", label: "Pakistan" }
+  { id: "pakistan", label: "Pakistan Live" }
 ];
 
 export default function Header({
@@ -23,10 +23,10 @@ export default function Header({
   return (
     <header className="glass-panel flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-400">AquaNexus control nexus</p>
-        <h1 className="mt-3 text-4xl font-semibold">Futuristic Water Allocation Command</h1>
+        <p className="text-xs uppercase tracking-[0.3em] text-slate-400">AquaNexus Pakistan Pilot</p>
+        <h1 className="mt-3 text-4xl font-semibold">Water Allocation Decision Dashboard</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-300">
-          Adaptive intelligence orchestrating reservoir health, farm equity, and climate resilience.
+          Compare policy options across provinces to protect crop yield, fairness, and reservoir sustainability.
         </p>
       </div>
       <div className="flex flex-col items-start gap-4 sm:items-end">
