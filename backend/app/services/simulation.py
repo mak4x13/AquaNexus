@@ -47,6 +47,22 @@ def _gini_coefficient(values: Sequence[float]) -> float:
     return max(0.0, min(1.0, gini))
 
 
+def _validate_farms(farms: List[FarmConfig]) -> None:
+    if not farms:
+        raise ValueError("At least one farm is required.")
+
+    seen_ids = set()
+    duplicates = set()
+    for farm in farms:
+        if farm.id in seen_ids:
+            duplicates.add(farm.id)
+        seen_ids.add(farm.id)
+
+    if duplicates:
+        duplicate_list = ", ".join(sorted(duplicates))
+        raise ValueError(f"Farm IDs must be unique. Duplicate IDs: {duplicate_list}.")
+
+
 def _redistribute_leftover(allocations: List[float], demands: List[float], available: float) -> List[float]:
     leftover = available - sum(allocations)
     unmet = [i for i, demand in enumerate(demands) if allocations[i] < demand]
@@ -331,11 +347,13 @@ def _apply_pakistan_quota_defaults(
     if config.province_quotas:
         return config
 
-    provinces = [farm.province for farm in farms if farm.province]
-    if not provinces:
+    provinces = [farm.province for farm in farms]
+    if not any(provinces):
         raise ValueError("province is required on farms for pakistan-quota policy.")
+    if any(province is None for province in provinces):
+        raise ValueError("All farms must include province for pakistan-quota policy.")
 
-    unique = sorted(set(provinces))
+    unique = sorted({province for province in provinces if province is not None})
     share = 1.0 / len(unique)
     quotas = {province: share for province in unique}
     return config.model_copy(update={"province_quotas": quotas, "quota_mode": "share"})
@@ -365,8 +383,7 @@ def _build_metric(values: Sequence[float]) -> StressMetric:
 
 
 def run_simulation(request: SimulationRequest) -> SimulationResponse:
-    if not request.farms:
-        raise ValueError("At least one farm is required.")
+    _validate_farms(request.farms)
     if request.config.initial_reservoir > request.config.reservoir_capacity:
         raise ValueError("initial_reservoir cannot exceed reservoir_capacity.")
     if request.config.initial_groundwater > request.config.groundwater_capacity:
@@ -383,8 +400,9 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
 
     comparisons: List[SimulationResult] = []
     if request.compare_policies:
+        active_policy = "quota" if request.policy == "pakistan-quota" else request.policy
         for policy in ["equal", "proportional", "fair"]:
-            if policy == request.policy or request.policy == "pakistan-quota":
+            if policy == active_policy:
                 continue
             comparisons.append(_simulate_policy(request.farms, config, policy, climate_series))
 
@@ -392,8 +410,7 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
 
 
 def run_stress_test(request: StressTestRequest) -> StressTestResponse:
-    if not request.farms:
-        raise ValueError("At least one farm is required.")
+    _validate_farms(request.farms)
     if request.config.initial_reservoir > request.config.reservoir_capacity:
         raise ValueError("initial_reservoir cannot exceed reservoir_capacity.")
     if request.config.initial_groundwater > request.config.groundwater_capacity:

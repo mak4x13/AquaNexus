@@ -9,7 +9,6 @@ import {
   getFarmProfiles,
   runSimulationRequest,
   scenarioPolicyMap,
-  type ScenarioPolicy,
   type SimulationRequest,
   type SimulationResponse
 } from "./api";
@@ -190,9 +189,10 @@ export const useBackendData = () => {
           setError("Pakistan preset not loaded yet.");
           return;
         }
+        const pakistanPolicy = scenario === "Equity First" ? "pakistan-quota" : policy;
         request = {
           ...pakistanPreset,
-          policy,
+          policy: pakistanPolicy,
           compare_policies: false
         };
       }

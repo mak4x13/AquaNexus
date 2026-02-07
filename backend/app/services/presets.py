@@ -80,8 +80,7 @@ def list_presets() -> List[PresetResponse]:
                 "Quota values are demo-only and should be tuned with local data."
             ),
             request=pakistan_request,
-        )
-        ,
+        ),
         PresetResponse(
             id="pk-irrigation-auto-quota",
             name="Pakistan Irrigation (Auto Quota)",

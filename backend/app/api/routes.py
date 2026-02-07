@@ -1,6 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
 
 from app.models import (
     AgentTurn,
@@ -141,7 +142,10 @@ def negotiate_multi(request: MultiAgentNegotiationRequest) -> MultiAgentNegotiat
     elif not isinstance(transcript_raw, list):
         raise HTTPException(status_code=502, detail="Negotiation transcript is not a list.")
 
-    transcript = [AgentTurn(**turn) for turn in transcript_raw]
+    try:
+        transcript = [AgentTurn(**turn) for turn in transcript_raw]
+    except (TypeError, ValidationError) as exc:
+        raise HTTPException(status_code=502, detail=f"Negotiation transcript validation failed: {exc}") from exc
     agreement = data.get("agreement")
     return MultiAgentNegotiationResponse(model=model, transcript=transcript, agreement=str(agreement) if agreement is not None else None)
 
