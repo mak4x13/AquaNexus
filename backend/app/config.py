@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     groq_model: str = "groq/compound"
     cors_origins: List[str] = ["*"]
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8")
 
 
 settings = Settings()

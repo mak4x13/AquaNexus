@@ -173,7 +173,7 @@ class AgentTurn(BaseModel):
 
 class MultiAgentNegotiationRequest(BaseModel):
     prompt: str = Field(min_length=1)
-    agents: List[AgentProfile]
+    agents: List[AgentProfile] = Field(default_factory=list)
     rounds: int = Field(default=3, ge=1, le=10)
     context: Optional[Dict[str, object]] = None
     simulation: Optional[SimulationResponse] = None

@@ -132,7 +132,7 @@ FastAPI backend for multi-agent water allocation simulation and Groq-powered neg
 ```
 
 **Notes**
-- `policy` supports `fair`, `equal`, `proportional`, and `quota`.
+- `policy` supports `fair`, `equal`, `proportional`, `quota`, and `pakistan-quota` (auto-derives quotas from farm provinces).
 - `compare_policies` returns baseline comparisons for quick demo charts.
 - `conveyance_loss_rate` models canal and distribution losses (set to 0 for none).
 - `drought_demand_reduction` uses farm `resilience` to reduce demand during droughts.
