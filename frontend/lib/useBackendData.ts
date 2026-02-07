@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardState } from "./types";
+import type { DashboardState, LiveFeedStatus } from "./types";
 import { clamp } from "./utils";
 import { createInitialState } from "./mockData";
 import {
@@ -77,7 +77,7 @@ const buildPakistanClimate = (
 };
 
 const buildFlowState = (
-  request: SimulationRequest,
+  _request: SimulationRequest,
   farms: Array<{ id: string; name: string; requested: number; allocated: number; group?: string }>
 ) => {
   const hubId = "hub";
@@ -86,10 +86,10 @@ const buildFlowState = (
 
   const nodes = [
     { id: sourceId, label: "Reservoir", type: "source" as const },
-    { id: hubId, label: "Allocation Hub", type: "hub" as const },
+    { id: hubId, label: "Policy Hub", type: "hub" as const },
     ...farms.map((farm) => ({
       id: farm.id,
-      label: farm.name,
+      label: farm.group ? `${farm.group} Farm` : farm.name,
       type: "sink" as const,
       group: farm.group
     }))
@@ -107,13 +107,67 @@ const buildFlowState = (
   return { nodes, edges };
 };
 
+const formatUtcTimestamp = (value?: string | null) => {
+  if (!value) return "latest fetch";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString("en-PK", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+};
+
+const deriveLiveStatus = (
+  liveDamData: PakistanLiveDamResponse | null,
+  usedPresetFallback: boolean
+): LiveFeedStatus => {
+  if (usedPresetFallback) {
+    return {
+      mode: "preset-fallback",
+      label: "Preset fallback",
+      detail: "Live source failed, so the simulator is running Pakistan preset assumptions."
+    };
+  }
+
+  if (!liveDamData) {
+    return {
+      mode: "preset-fallback",
+      label: "Preset fallback",
+      detail: "Live dam payload missing."
+    };
+  }
+
+  const notes = liveDamData.notes.join(" ").toLowerCase();
+  if (notes.includes("stale cache")) {
+    return {
+      mode: "stale-cache",
+      label: "Stale cache",
+      detail: `Using last known FFD values (${liveDamData.updated_at_pkt ?? formatUtcTimestamp(liveDamData.fetched_at_utc)}).`
+    };
+  }
+
+  return {
+    mode: "live",
+    label: "Live feed",
+    detail: liveDamData.updated_at_pkt
+      ? `FFD updated at ${liveDamData.updated_at_pkt}.`
+      : `Fetched ${formatUtcTimestamp(liveDamData.fetched_at_utc)}.`
+  };
+};
+
 const mapSimulationToDashboard = (
   response: SimulationResponse,
   scenario: string,
   scenarios: string[],
   request: SimulationRequest,
   weather: PakistanWeatherResponse | null,
-  liveDamData: PakistanLiveDamResponse | null = null
+  liveDamData: PakistanLiveDamResponse | null = null,
+  liveStatus: LiveFeedStatus
 ): DashboardState => {
   const base = createInitialState();
   const profiles = getFarmProfiles();
@@ -122,9 +176,8 @@ const mapSimulationToDashboard = (
   const lastDay = daily[daily.length - 1];
 
   const reservoirCapacity = request.config.reservoir_capacity;
-  const reservoirLevelPct = reservoirCapacity > 0
-    ? (lastDay.reservoir_end / reservoirCapacity) * 100
-    : 0;
+  const reservoirLevelPct = reservoirCapacity > 0 ? (lastDay.reservoir_end / reservoirCapacity) * 100 : 0;
+  const toReservoirPct = (value: number) => (reservoirCapacity > 0 ? (value / reservoirCapacity) * 100 : 0);
 
   const farms = response.primary.farms.map((farm) => {
     const profile = profileLookup.get(farm.id);
@@ -148,7 +201,7 @@ const mapSimulationToDashboard = (
   const climate = buildPakistanClimate(daily, weather);
   const reservoirTimeline = daily.map((day) => ({
     day: day.day,
-    reservoir_level: Number(((day.reservoir_end / reservoirCapacity) * 100).toFixed(1)),
+    reservoir_level: Number(toReservoirPct(day.reservoir_end).toFixed(1)),
     inflow: Number(day.rainfall.toFixed(1)),
     outflow: Number(day.total_allocated.toFixed(1))
   }));
@@ -188,6 +241,7 @@ const mapSimulationToDashboard = (
           }))
         }
       : undefined,
+    liveStatus,
     dailySignals: daily.map((day) => ({
       day: day.day,
       rainfall: Number(day.rainfall.toFixed(1)),
@@ -197,9 +251,10 @@ const mapSimulationToDashboard = (
       gini: Number(day.gini.toFixed(2))
     })),
     objective: {
-      purpose: liveDamData?.updated_at_pkt
-        ? `Help Pakistan allocate scarce water across provinces using live FFD snapshot (${liveDamData.updated_at_pkt}) plus policy simulation.`
-        : "Help Pakistan allocate scarce water across provinces while maximizing yield, equity, and drought resilience.",
+      purpose:
+        liveStatus.mode === "preset-fallback"
+          ? "Live feed is unavailable, so AquaNexus is running validated Pakistan preset assumptions for policy comparison."
+          : "Use live Pakistan dam and weather signals to compare allocation policies before real-world release decisions.",
       beneficiaries: [
         "Farmers with predictable allocations",
         "Canal tail-end communities with fairer access",
@@ -221,7 +276,6 @@ export const useBackendData = () => {
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState(base.scenario);
-  const [dataMode, setDataMode] = useState<"default" | "pakistan">("default");
   const [pakistanPreset, setPakistanPreset] = useState<SimulationRequest | null>(null);
   const [weather, setWeather] = useState<PakistanWeatherResponse | null>(null);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
@@ -234,7 +288,7 @@ export const useBackendData = () => {
         const presets = await fetchPresets();
         if (!active) return;
         setPakistanPreset(getPakistanPreset(presets));
-      } catch (err) {
+      } catch {
         if (!active) return;
         setPakistanPreset(null);
       }
@@ -277,41 +331,43 @@ export const useBackendData = () => {
       setError(null);
       try {
         const policy = scenarioPolicyMap[scenario] ?? "fair";
-        let request = buildSimulationRequest(policy);
+        const pakistanPolicy = scenario === "Equity First" ? "pakistan-quota" : policy;
+
+        let request = buildSimulationRequest(pakistanPolicy);
         let response: SimulationResponse;
         let liveDamData: PakistanLiveDamResponse | null = null;
+        let usedPresetFallback = false;
 
-        if (dataMode === "pakistan") {
-          const pakistanPolicy = scenario === "Equity First" ? "pakistan-quota" : policy;
-          try {
-            const liveResult = await fetchPakistanLiveSimulation(pakistanPolicy, 30, false);
-            request = liveResult.request;
-            response = liveResult.simulation;
-            liveDamData = liveResult.live_data;
-          } catch (liveErr) {
-            if (!pakistanPreset) {
-              throw liveErr;
-            }
-            request = {
-              ...pakistanPreset,
-              policy: pakistanPolicy,
-              compare_policies: false
-            };
-            response = await runSimulationRequest(request);
-            setError("Live dam source unavailable. Showing Pakistan preset fallback.");
+        try {
+          const liveResult = await fetchPakistanLiveSimulation(pakistanPolicy, 30, false);
+          request = liveResult.request;
+          response = liveResult.simulation;
+          liveDamData = liveResult.live_data;
+        } catch (liveErr) {
+          if (!pakistanPreset) {
+            throw liveErr;
           }
-        } else {
+          usedPresetFallback = true;
+          request = {
+            ...pakistanPreset,
+            policy: pakistanPolicy,
+            compare_policies: false
+          };
           response = await runSimulationRequest(request);
+          setError("Live dam source unavailable. Showing Pakistan preset fallback.");
         }
 
         if (!active) return;
+
+        const liveStatus = deriveLiveStatus(liveDamData, usedPresetFallback);
         const mapped = mapSimulationToDashboard(
           response,
           scenario,
           base.scenarios,
           request,
           weather,
-          liveDamData
+          liveDamData,
+          liveStatus
         );
         setData(mapped);
         setSelectedDayIndex((prev) => {
@@ -328,14 +384,13 @@ export const useBackendData = () => {
     };
 
     fetchData();
-    const intervalMs = dataMode === "pakistan" ? 30000 : 6000;
-    const interval = setInterval(fetchData, intervalMs);
+    const interval = setInterval(fetchData, 30000);
 
     return () => {
       active = false;
       clearInterval(interval);
     };
-  }, [base.scenarios, dataMode, pakistanPreset, scenario, weather]);
+  }, [base.scenarios, pakistanPreset, scenario, weather]);
 
   const updateSelectedDayIndex = (nextIndex: number | null) => {
     setSelectedDayIndex(nextIndex);
@@ -347,17 +402,11 @@ export const useBackendData = () => {
     setData((prev) => ({ ...prev, scenario: nextScenario }));
   };
 
-  const updateDataMode = (mode: "default" | "pakistan") => {
-    setDataMode(mode);
-  };
-
   return {
     data,
     setScenario: updateScenario,
     status,
     error,
-    dataMode,
-    setDataMode: updateDataMode,
     selectedDayIndex: selectedDayIndex ?? Math.max(data.reservoirTimeline.length - 1, 0),
     setSelectedDayIndex: updateSelectedDayIndex
   };

@@ -30,3 +30,62 @@ h4 {
 .soft-divider {
   @apply border-t border-white/10;
 }
+
+.section-reveal {
+  will-change: transform, opacity;
+}
+
+.flow-edge-pulse {
+  animation: flowPulse 2.4s ease-in-out infinite;
+}
+
+.flow-edge-animated {
+  stroke-dasharray: 8 14;
+  animation: flowTravel 2s linear infinite;
+}
+
+.flow-node-pulse {
+  transform-origin: center;
+  animation: nodePulse 2.7s ease-in-out infinite;
+}
+
+@keyframes flowPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@keyframes flowTravel {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -64;
+  }
+}
+
+@keyframes nodePulse {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-pulse,
+  .flow-edge-animated,
+  .flow-node-pulse,
+  .section-reveal {
+    animation: none !important;
+    transition: none !important;
+  }
+}

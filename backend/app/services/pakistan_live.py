@@ -125,7 +125,9 @@ def _cache_get() -> Optional[PakistanLiveDamResponse]:
         return None
     if datetime.now(timezone.utc).timestamp() > float(expires_at):
         return None
-    return cached
+    cached_copy = cached.model_copy(deep=True)
+    cached_copy.notes.append("Serving warm cache (<=10 minutes) from latest live FFD fetch.")
+    return cached_copy
 
 
 def _cache_set(value: PakistanLiveDamResponse) -> None:

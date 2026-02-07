@@ -1,5 +1,5 @@
 import { formatNumber, formatPct } from "@/lib/utils";
-import type { LiveReservoirSnapshot, ReservoirState, ReservoirTimelinePoint } from "@/lib/types";
+import type { ReservoirState, ReservoirTimelinePoint } from "@/lib/types";
 import GlassPanel from "./GlassPanel";
 
 type ReservoirVisualizationProps = {
@@ -8,7 +8,6 @@ type ReservoirVisualizationProps = {
   timeline: ReservoirTimelinePoint[];
   selectedIndex: number;
   onSelectIndex: (index: number | null) => void;
-  liveSnapshot?: LiveReservoirSnapshot;
 };
 
 export default function ReservoirVisualization({
@@ -16,8 +15,7 @@ export default function ReservoirVisualization({
   day,
   timeline,
   selectedIndex,
-  onSelectIndex,
-  liveSnapshot
+  onSelectIndex
 }: ReservoirVisualizationProps) {
   const clampedIndex = Math.min(Math.max(selectedIndex, 0), Math.max(timeline.length - 1, 0));
   const selected = timeline[clampedIndex];
@@ -31,7 +29,7 @@ export default function ReservoirVisualization({
   const isPinnedHistory = clampedIndex < latestIndex;
 
   return (
-    <GlassPanel title="Reservoir Visual" subtitle={`Day ${displayDay}`} className="relative overflow-hidden">
+    <GlassPanel title="Reservoir Projection" subtitle={`Simulation day ${displayDay}`} className="relative overflow-hidden">
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="relative h-56 overflow-hidden rounded-3xl border border-white/10 bg-slate-950/40 shadow-inner">
           <div className="absolute inset-4 rounded-[24px] border border-white/10 bg-gradient-to-br from-sky-500/20 via-slate-950/10 to-blue-600/30" />
@@ -47,11 +45,13 @@ export default function ReservoirVisualization({
             />
           </div>
         </div>
+
         <div className="flex flex-col justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Reservoir level</p>
             <p className="mt-2 text-3xl font-semibold">{formatNumber(displayLevel)}%</p>
           </div>
+
           <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Inflow</p>
@@ -62,36 +62,16 @@ export default function ReservoirVisualization({
               <p className="mt-1 text-xl font-semibold">{formatNumber(displayOutflow)} ML</p>
             </div>
           </div>
+
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Sustainability threshold</p>
             <p className="mt-2 text-lg font-semibold">{formatPct(threshold / 100)}</p>
           </div>
-          {liveSnapshot && liveSnapshot.stations.length > 0 ? (
-            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-400/5 p-4 text-sm text-slate-200">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Live dam snapshot</p>
-                <p className="text-[11px] text-slate-400">{liveSnapshot.updated_at_pkt ?? "latest"}</p>
-              </div>
-              <div className="grid gap-2">
-                {liveSnapshot.stations.map((station) => (
-                  <div key={station.dam} className="rounded-xl border border-white/10 bg-slate-950/35 px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-100">{station.dam}</p>
-                    <p className="mt-1 text-[11px] text-slate-300">
-                      Inflow {formatNumber(station.inflow_cusecs)} cusecs | Outflow {formatNumber(station.outflow_cusecs)} cusecs
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      Level {station.current_level_ft !== null && station.current_level_ft !== undefined ? `${formatNumber(station.current_level_ft)} ft` : "n/a"}
-                      {" | "}
-                      Est. storage {station.estimated_storage_maf !== null && station.estimated_storage_maf !== undefined ? `${formatNumber(station.estimated_storage_maf)} MAF` : "n/a"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              {liveSnapshot.notes.length > 0 ? (
-                <p className="mt-3 text-[11px] text-slate-400">{liveSnapshot.notes[0]}</p>
-              ) : null}
-            </div>
-          ) : null}
+
+          <div className="rounded-2xl border border-cyan-300/15 bg-cyan-500/10 p-4 text-xs text-slate-200">
+            Live inputs feed this run. The chart and slider show projected allocation outcomes over the simulation timeline.
+          </div>
+
           {timeline.length > 1 ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
               <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -107,9 +87,7 @@ export default function ReservoirVisualization({
                 className="mt-3 w-full accent-sky-400"
               />
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-xs text-slate-400">
-                  {isPinnedHistory ? `Pinned to Day ${displayDay}` : "Live view"}
-                </p>
+                <p className="text-xs text-slate-400">{isPinnedHistory ? `Pinned to Day ${displayDay}` : "Live view"}</p>
                 <button
                   type="button"
                   onClick={() => onSelectIndex(null)}

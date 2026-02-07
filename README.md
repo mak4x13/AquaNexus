@@ -17,11 +17,12 @@ AquaNexus provides a transparent simulation environment so planners can test pol
 
 ## What It Does Today
 1. Simulates multi-day allocation for farm agents across `Punjab`, `Sindh`, `Khyber Pakhtunkhwa`, and `Balochistan`.
-2. Supports policy modes: `fair`, `equal`, `proportional`, `quota`, `pakistan-quota`.
-3. Computes core metrics: total yield, Gini fairness index, depletion risk, sustainability score, groundwater/conveyance impact.
-4. Exposes LLM endpoints for negotiation draft generation, multi-agent transcript generation, and policy brief generation.
-5. Shows live weather feed for provinces with safe fallback values when the weather API is unavailable.
-6. Auto-ingests latest FFD river-state dam signals and runs live Pakistan simulation without manual payload entry.
+2. Runs a Pakistan-only live dashboard mode (no separate default mode in UI).
+3. Supports policy modes: `fair`, `equal`, `proportional`, `quota`, `pakistan-quota`.
+4. Computes core metrics: total yield, Gini fairness index, depletion risk, sustainability score, groundwater/conveyance impact.
+5. Exposes LLM endpoints for negotiation draft generation, multi-agent transcript generation, and policy brief generation.
+6. Shows live weather feed for provinces with safe fallback values when the weather API is unavailable.
+7. Auto-ingests latest FFD river-state dam signals and runs live Pakistan simulation without manual payload entry.
 
 ## What Is Real vs Simulated
 `Simulated`: reservoir dynamics, farm demand/yield curves, policy allocation outcomes, and projected multi-day inflow sequence.  
@@ -121,8 +122,7 @@ You do not need to manually call POST endpoints for normal use.
 
 1. Start backend + frontend.
 2. Open `http://127.0.0.1:3000`.
-3. Switch data mode to `Pakistan`.
-4. Frontend automatically calls `GET /simulate/pakistan-live` and displays live-driven simulation.
+3. Dashboard automatically calls `GET /simulate/pakistan-live` and displays live-driven simulation.
 
 Direct API quick check:
 ```powershell
@@ -206,7 +206,7 @@ After starting frontend:
 - Open `http://127.0.0.1:3000`
 - Move reservoir day slider to an earlier day and confirm it stays pinned
 - Click `Jump to latest` and confirm it returns to current day
-- Switch scenario/data mode and confirm cards/metrics update
+- Switch scenario and confirm cards/metrics update
 
 ## Troubleshooting
 1. If `npm run dev -- --port 3000` fails, run `npm run dev -- -p 3000`.

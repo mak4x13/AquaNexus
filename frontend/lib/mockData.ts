@@ -65,6 +65,11 @@ export const createInitialState = (): DashboardState => ({
       { from: "hub", to: "f4", intensity: 0.6 }
     ]
   },
+  liveStatus: {
+    mode: "preset-fallback",
+    label: "Preset fallback",
+    detail: "Waiting for backend live Pakistan feed."
+  },
   dailySignals: [
     {
       day: 12,

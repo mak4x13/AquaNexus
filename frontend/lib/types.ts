@@ -67,6 +67,14 @@ export type FlowState = {
   edges: FlowEdge[];
 };
 
+export type LiveFeedMode = "live" | "stale-cache" | "preset-fallback";
+
+export type LiveFeedStatus = {
+  mode: LiveFeedMode;
+  label: string;
+  detail: string;
+};
+
 export type LiveReservoirSnapshot = {
   source: string;
   updated_at_pkt?: string | null;
@@ -92,6 +100,7 @@ export type DashboardState = {
   metrics: MetricsState;
   flow: FlowState;
   liveReservoir?: LiveReservoirSnapshot;
+  liveStatus: LiveFeedStatus;
   dailySignals: Array<{
     day: number;
     rainfall: number;

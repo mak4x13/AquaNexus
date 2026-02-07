@@ -1,28 +1,21 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Header from "@/components/Header";
-import ReservoirVisualization from "@/components/ReservoirVisualization";
-import FarmAgentCards from "@/components/FarmAgentCards";
-import ClimatePanel from "@/components/ClimatePanel";
-import SystemMetrics from "@/components/SystemMetrics";
-import FlowMap from "@/components/FlowMap";
-import ControlSurface from "@/components/ControlSurface";
-import MissionPanel from "@/components/MissionPanel";
 import AgentActivityPanel from "@/components/AgentActivityPanel";
+import ClimatePanel from "@/components/ClimatePanel";
+import ControlSurface from "@/components/ControlSurface";
+import FarmAgentCards from "@/components/FarmAgentCards";
+import FlowMap from "@/components/FlowMap";
+import Header from "@/components/Header";
+import LiveReservoirHero from "@/components/LiveReservoirHero";
+import MissionPanel from "@/components/MissionPanel";
+import ReservoirVisualization from "@/components/ReservoirVisualization";
+import SystemMetrics from "@/components/SystemMetrics";
 import { useBackendData } from "@/lib/useBackendData";
 
 export default function HomePage() {
-  const {
-    data,
-    setScenario,
-    status,
-    error,
-    dataMode,
-    setDataMode,
-    selectedDayIndex,
-    setSelectedDayIndex
-  } = useBackendData();
+  const { data, setScenario, status, error, selectedDayIndex, setSelectedDayIndex } = useBackendData();
+
   const selectedSignal =
     data.dailySignals[Math.min(Math.max(selectedDayIndex, 0), Math.max(data.dailySignals.length - 1, 0))] ??
     data.dailySignals[data.dailySignals.length - 1];
@@ -33,8 +26,7 @@ export default function HomePage() {
         scenario={data.scenario}
         scenarios={data.scenarios}
         onScenarioChange={setScenario}
-        dataMode={dataMode}
-        onDataModeChange={setDataMode}
+        liveStatus={data.liveStatus}
       />
 
       {status === "error" ? (
@@ -43,11 +35,27 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {status !== "error" && error ? (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-100">
+          {error}
+        </div>
+      ) : null}
+
       <motion.section
-        className="grid gap-6 lg:grid-cols-[1.4fr_1fr]"
+        className="section-reveal"
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.55 }}
+      >
+        <LiveReservoirHero snapshot={data.liveReservoir} liveStatus={data.liveStatus} />
+      </motion.section>
+
+      <motion.section
+        id="reservoir-detail"
+        className="grid gap-6 lg:grid-cols-[1.4fr_1fr] section-reveal"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, delay: 0.06 }}
       >
         <ReservoirVisualization
           reservoir={data.reservoir}
@@ -55,37 +63,36 @@ export default function HomePage() {
           timeline={data.reservoirTimeline}
           selectedIndex={selectedDayIndex}
           onSelectIndex={setSelectedDayIndex}
-          liveSnapshot={data.liveReservoir}
         />
         <SystemMetrics metrics={data.metrics} />
       </motion.section>
 
       <motion.section
-        className="grid gap-6 lg:grid-cols-[1.1fr_1fr]"
+        className="grid gap-6 lg:grid-cols-[1.1fr_1fr] section-reveal"
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.1 }}
+        transition={{ duration: 0.55, delay: 0.12 }}
       >
         <FarmAgentCards farms={data.farms} />
         <ClimatePanel climate={data.climate} />
       </motion.section>
 
       <motion.section
-        className="grid gap-6 lg:grid-cols-[1.2fr_1fr]"
+        className="grid gap-6 lg:grid-cols-[1.2fr_1fr] section-reveal"
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.2 }}
+        transition={{ duration: 0.55, delay: 0.18 }}
       >
         <FlowMap flow={data.flow} />
-        <ControlSurface />
+        <ControlSurface liveStatus={data.liveStatus} />
       </motion.section>
 
       {selectedSignal ? (
         <motion.section
-          className="grid gap-6 lg:grid-cols-[1fr_1fr]"
+          className="grid gap-6 lg:grid-cols-[1fr_1fr] section-reveal"
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.25 }}
+          transition={{ duration: 0.55, delay: 0.24 }}
         >
           <AgentActivityPanel signal={selectedSignal} farms={data.farms} />
           <MissionPanel
