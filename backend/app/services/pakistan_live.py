@@ -1,7 +1,9 @@
+import json
 import math
 import re
 import ssl
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from statistics import mean
 from typing import Dict, List, Literal, Optional, Tuple
 from urllib.error import URLError
@@ -11,6 +13,8 @@ from app.models import (
     FarmConfig,
     LiveDamStation,
     PakistanLiveDamResponse,
+    PakistanLiveHistoryResponse,
+    PakistanLiveHistorySnapshot,
     SimulationConfig,
     SimulationRequest,
 )
@@ -20,6 +24,8 @@ from app.services.weather import get_pakistan_weather
 RIVER_STATE_URL = "https://ffd.pmd.gov.pk/river-state?zoom=6"
 CUSECS_TO_MAF_PER_DAY = 0.000001984
 CACHE_TTL_SECONDS = 600
+MAX_HISTORY_SNAPSHOTS = 2000
+HISTORY_FILE_PATH = Path(__file__).resolve().parents[2] / "runtime" / "pakistan_live_history.json"
 
 DAM_CAPACITY_MAF = {
     "Tarbela Dam": 11.62,
@@ -37,6 +43,77 @@ _LIVE_CACHE: Dict[str, object] = {
     "expires_at": 0.0,
     "value": None,
 }
+
+
+def _safe_parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _read_history_store() -> Dict[str, object]:
+    if not HISTORY_FILE_PATH.exists():
+        return {"last_success_at": None, "snapshots": []}
+    try:
+        with HISTORY_FILE_PATH.open("r", encoding="utf-8") as stream:
+            parsed = json.load(stream)
+        if isinstance(parsed, dict):
+            snapshots = parsed.get("snapshots")
+            if not isinstance(snapshots, list):
+                snapshots = []
+            return {
+                "last_success_at": parsed.get("last_success_at"),
+                "snapshots": snapshots,
+            }
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {"last_success_at": None, "snapshots": []}
+
+
+def _write_history_store(payload: Dict[str, object]) -> None:
+    HISTORY_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with HISTORY_FILE_PATH.open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=True, indent=2)
+
+
+def _data_quality(stations: List[LiveDamStation], notes: List[str]) -> str:
+    missing_station_note = any("was not found" in note for note in notes)
+    level_missing = any(station.current_level_ft is None for station in stations)
+    if len(stations) >= 3 and not missing_station_note and not level_missing:
+        return "high"
+    if len(stations) >= 2 and not missing_station_note:
+        return "medium"
+    return "low"
+
+
+def _build_snapshot_payload(result: PakistanLiveDamResponse) -> Dict[str, object]:
+    return {
+        "source": result.source,
+        "fetched_at_utc": result.fetched_at_utc,
+        "updated_at_pkt": result.updated_at_pkt,
+        "stations": [station.model_dump() for station in result.stations],
+        "notes": result.notes,
+        "data_quality": _data_quality(result.stations, result.notes),
+        "sample_count": len(result.stations),
+    }
+
+
+def _record_history_snapshot(result: PakistanLiveDamResponse) -> None:
+    store = _read_history_store()
+    snapshots = store.get("snapshots")
+    if not isinstance(snapshots, list):
+        snapshots = []
+
+    snapshots.append(_build_snapshot_payload(result))
+    if len(snapshots) > MAX_HISTORY_SNAPSHOTS:
+        snapshots = snapshots[-MAX_HISTORY_SNAPSHOTS:]
+
+    store["snapshots"] = snapshots
+    store["last_success_at"] = result.fetched_at_utc
+    _write_history_store(store)
 
 
 def _parse_number(value: str) -> float:
@@ -197,7 +274,51 @@ def fetch_pakistan_live_dams() -> PakistanLiveDamResponse:
         notes=notes,
     )
     _cache_set(result)
+    try:
+        _record_history_snapshot(result)
+    except OSError:
+        # History persistence should not block live API response.
+        pass
     return result
+
+
+def fetch_pakistan_live_history(days: int = 30) -> PakistanLiveHistoryResponse:
+    if days < 1 or days > 365:
+        raise ValueError("days must be between 1 and 365.")
+
+    store = _read_history_store()
+    raw_snapshots = store.get("snapshots")
+    if not isinstance(raw_snapshots, list):
+        raw_snapshots = []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    snapshots: List[PakistanLiveHistorySnapshot] = []
+
+    for raw in raw_snapshots:
+        if not isinstance(raw, dict):
+            continue
+        fetched_at = _safe_parse_iso(raw.get("fetched_at_utc"))
+        if fetched_at is None:
+            continue
+        if fetched_at < cutoff:
+            continue
+        try:
+            snapshots.append(PakistanLiveHistorySnapshot(**raw))
+        except Exception:
+            continue
+
+    snapshots.sort(key=lambda item: item.fetched_at_utc, reverse=True)
+    last_success_at = store.get("last_success_at")
+    latest_quality = snapshots[0].data_quality if snapshots else "unknown"
+
+    return PakistanLiveHistoryResponse(
+        source="ffd-river-state-history",
+        requested_days=days,
+        data_quality=latest_quality,
+        sample_count=len(snapshots),
+        last_success_at=str(last_success_at) if last_success_at else None,
+        snapshots=snapshots,
+    )
 
 
 def _build_projection_series(base_inflow_units: float, drought_risk: float, days: int) -> List[float]:

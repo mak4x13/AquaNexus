@@ -109,6 +109,7 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 - `GET /llm/health`
 - `GET /weather/pakistan`
 - `GET /data/dams/pakistan-live`
+- `GET /data/dams/history`
 - `GET /simulate/pakistan-live`
 - `POST /data/dams/ingest`
 - `POST /simulate`
@@ -127,8 +128,28 @@ You do not need to manually call POST endpoints for normal use.
 Direct API quick check:
 ```powershell
 Invoke-RestMethod "http://127.0.0.1:8000/data/dams/pakistan-live"
+Invoke-RestMethod "http://127.0.0.1:8000/data/dams/history?days=30"
 Invoke-RestMethod "http://127.0.0.1:8000/simulate/pakistan-live?policy=pakistan-quota&days=30"
 ```
+
+## Live History and Calibration Inputs
+Use `GET /data/dams/history?days=N` to retrieve rolling persisted snapshots from live FFD fetches.
+
+Returned metadata:
+- `data_quality`: quality label of the latest snapshot in window (`high`, `medium`, `low`, `unknown`).
+- `sample_count`: number of snapshots returned in the requested window.
+- `last_success_at`: last successful live fetch timestamp in UTC.
+
+Calibration-ready fields per snapshot:
+- `fetched_at_utc`, `updated_at_pkt`
+- `stations[].inflow_cusecs`, `stations[].outflow_cusecs`
+- `stations[].current_level_ft`, `stations[].estimated_storage_maf`
+
+Suggested calibration workflow:
+1. Pull 30-180 day history from `/data/dams/history`.
+2. Align with observed allocation/outcome records (IRSA, WAPDA, provincial irrigation reports).
+3. Tune model params (`maf_to_model_units`, `drought_multiplier`, `conveyance_loss_rate`, groundwater limits) to minimize error on observed reservoir/yield trends.
+4. Freeze calibrated parameter sets per season and rerun scenario comparisons.
 
 ## Real Dam Data Ingestion
 Use `POST /data/dams/ingest` with real daily records (for example from IRSA/WAPDA bulletins after conversion to JSON).
@@ -180,6 +201,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/presets
 Invoke-RestMethod http://127.0.0.1:8000/weather/pakistan
 Invoke-RestMethod "http://127.0.0.1:8000/data/dams/pakistan-live"
+Invoke-RestMethod "http://127.0.0.1:8000/data/dams/history?days=30"
 Invoke-RestMethod "http://127.0.0.1:8000/simulate/pakistan-live?policy=pakistan-quota&days=30"
 Invoke-RestMethod "http://127.0.0.1:8000/llm/health"
 Invoke-RestMethod "http://127.0.0.1:8000/llm/health?probe=true"
@@ -216,6 +238,7 @@ After starting frontend:
 ## Current Limitations
 - Core water dynamics are simulation-based, not yet calibrated to real dam operations.
 - Live endpoint currently uses latest available FFD snapshot and projects a multi-day inflow series from that snapshot.
+- Live history endpoint stores rolling runtime snapshots for calibration but is not a full historical archive yet.
 - Dam ingestion currently expects pre-cleaned JSON records (no direct PDF scraping/CSV parser endpoint yet).
 - No persistent database/history/audit log yet.
 - LLM negotiation is advisory text, not direct optimizer control.

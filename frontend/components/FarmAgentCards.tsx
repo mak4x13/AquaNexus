@@ -8,8 +8,11 @@ type FarmAgentCardsProps = {
 
 export default function FarmAgentCards({ farms }: FarmAgentCardsProps) {
   return (
-    <GlassPanel title="Farm Agent Cards" subtitle="Allocation fairness">
+    <GlassPanel title="Farm Agent Cards" subtitle="Fairness = allocated/requested water">
       <div className="grid gap-4">
+        <p className="text-xs text-slate-400">
+          Fairness % = allocated water / requested water. 100% means the farm received its full requested demand.
+        </p>
         {farms.map((farm) => {
           const allocationRatio = farm.allocated / farm.requested;
           const fairnessClass =

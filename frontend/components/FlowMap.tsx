@@ -17,7 +17,7 @@ const buildPositions = (flow: FlowState) => {
 
   const gap = sinks.length > 1 ? 176 / (sinks.length - 1) : 0;
   sinks.forEach((node, index) => {
-    positions[node.id] = { x: 308, y: 24 + gap * index };
+    positions[node.id] = { x: 292, y: 24 + gap * index };
   });
 
   return positions;
@@ -37,7 +37,7 @@ export default function FlowMap({ flow }: FlowMapProps) {
     <GlassPanel title="Interaction Flow Map" subtitle="Climate + reservoir signals routed through policy to province agents">
       <div className="grid gap-4">
         <div className="relative h-64 rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/80 via-slate-900/50 to-slate-950/80">
-          <svg viewBox="0 0 360 224" className="h-full w-full">
+          <svg viewBox="0 0 420 224" className="h-full w-full">
             <defs>
               <linearGradient id="flow-base" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stopColor="#38bdf8" />

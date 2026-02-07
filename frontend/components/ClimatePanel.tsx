@@ -1,6 +1,7 @@
 import {
   AreaChart,
   Area,
+  Label,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -47,16 +48,24 @@ export default function ClimatePanel({ climate }: ClimatePanelProps) {
             </div>
           </div>
         ) : null}
-        <div className="h-48 rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="h-56 rounded-2xl border border-white/10 bg-white/5 p-3">
+          <p className="mb-2 text-xs uppercase tracking-[0.28em] text-slate-400">Rainfall Forecast (%)</p>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={climate.forecast} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={climate.forecast} margin={{ top: 8, right: 12, left: -4, bottom: 20 }}>
               <defs>
                 <linearGradient id="rain" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.7} />
                   <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="day" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
+              <XAxis
+                dataKey="day"
+                stroke="#94a3b8"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+                label={{ value: "Day", position: "insideBottom", dy: 12, fill: "#94a3b8", fontSize: 10 }}
+              />
               <YAxis
                 domain={[0, 1]}
                 tickFormatter={(value) => `${Math.round(value * 100)}%`}
@@ -64,7 +73,17 @@ export default function ClimatePanel({ climate }: ClimatePanelProps) {
                 fontSize={10}
                 tickLine={false}
                 axisLine={false}
-              />
+                width={52}
+              >
+                <Label
+                  value="Probability (%)"
+                  angle={-90}
+                  position="insideLeft"
+                  offset={8}
+                  fill="#94a3b8"
+                  fontSize={10}
+                />
+              </YAxis>
               <Tooltip
                 contentStyle={{ backgroundColor: "#0f172a", border: "1px solid rgba(255,255,255,0.1)" }}
                 formatter={(value: number) => `${Math.round(value * 100)}%`}

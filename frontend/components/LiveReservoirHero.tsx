@@ -45,7 +45,10 @@ export default function LiveReservoirHero({ snapshot, liveStatus }: LiveReservoi
               {snapshot?.source ?? "preset"}
             </span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-              FFD updated: {snapshot?.updated_at_pkt ?? "not available"}
+              Source updated (FFD): {snapshot?.updated_at_pkt ?? "not available"}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+              Fetched (AquaNexus): {snapshot ? formatUtcTimestamp(snapshot.fetched_at_utc) : "n/a"}
             </span>
           </div>
           <a
@@ -106,7 +109,7 @@ export default function LiveReservoirHero({ snapshot, liveStatus }: LiveReservoi
 
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
           <p>{liveStatus.detail}</p>
-          <p>Fetched at: {snapshot ? formatUtcTimestamp(snapshot.fetched_at_utc) : "n/a"}</p>
+          <p>Source timestamp and fetch timestamp can differ if FFD has not published a newer bulletin yet.</p>
         </div>
       </div>
     </GlassPanel>

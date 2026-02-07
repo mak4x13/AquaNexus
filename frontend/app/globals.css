@@ -19,7 +19,7 @@ h4 {
 }
 
 .glass-panel {
-  @apply rounded-3xl border border-white/10 bg-white/5 shadow-glass backdrop-blur-glass;
+  @apply rounded-3xl border border-white/10 bg-slate-900/70 shadow-glass backdrop-blur-sm;
 }
 
 .panel-grid {
@@ -32,7 +32,7 @@ h4 {
 }
 
 .section-reveal {
-  will-change: transform, opacity;
+  contain: layout paint;
 }
 
 .flow-edge-pulse {
@@ -47,6 +47,44 @@ h4 {
 .flow-node-pulse {
   transform-origin: center;
   animation: nodePulse 2.7s ease-in-out infinite;
+}
+
+.agent-step-processing {
+  box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.35), 0 0 24px rgba(14, 165, 233, 0.2);
+}
+
+.agent-thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgba(186, 230, 253, 0.95);
+  animation: agentThinking 1s infinite ease-in-out;
+}
+
+.agent-thinking-dots span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.agent-thinking-dots span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.agent-step-connector {
+  width: 2px;
+  height: 14px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.35);
+  transition: background-color 220ms ease;
+}
+
+.agent-step-connector-active {
+  background: rgba(125, 211, 252, 0.95);
 }
 
 @keyframes flowPulse {
@@ -80,12 +118,34 @@ h4 {
   }
 }
 
+@keyframes agentThinking {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .flow-edge-pulse,
   .flow-edge-animated,
   .flow-node-pulse,
-  .section-reveal {
+  .section-reveal,
+  .agent-thinking-dots span {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .flow-edge-pulse,
+  .flow-edge-animated,
+  .flow-node-pulse {
+    animation: none !important;
   }
 }

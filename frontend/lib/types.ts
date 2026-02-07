@@ -21,6 +21,15 @@ export type Farm = {
   fairness: number;
 };
 
+export type DaySignal = {
+  day: number;
+  rainfall: number;
+  drought: boolean;
+  total_allocated: number;
+  depletion_risk: number;
+  gini: number;
+};
+
 export type ClimatePoint = {
   day: string;
   rainfall_probability: number;
@@ -67,12 +76,44 @@ export type FlowState = {
   edges: FlowEdge[];
 };
 
+export type AgentStepState = "queued" | "processing" | "done";
+
+export type AgentKpi = {
+  id: "weather" | "depletion" | "gini" | "allocated";
+  label: string;
+  value: string;
+  tone: "neutral" | "warn" | "critical" | "good";
+};
+
+export type AgentWorkflowStep = {
+  id: "climate" | "reservoir" | "policy" | "farms";
+  title: string;
+  input: string;
+  decision: string;
+  output: string;
+  impactTag: string;
+  tone: "sky" | "amber" | "emerald" | "slate";
+};
+
 export type LiveFeedMode = "live" | "stale-cache" | "preset-fallback";
 
 export type LiveFeedStatus = {
   mode: LiveFeedMode;
   label: string;
   detail: string;
+};
+
+export type ProvinceQuotaInputs = {
+  Punjab: number;
+  Sindh: number;
+  "Khyber Pakhtunkhwa": number;
+  Balochistan: number;
+};
+
+export type PolicyControls = {
+  sustainabilityThresholdPct: number;
+  quotaMode: "share" | "absolute";
+  provinceQuotas: ProvinceQuotaInputs;
 };
 
 export type LiveReservoirSnapshot = {
@@ -101,14 +142,7 @@ export type DashboardState = {
   flow: FlowState;
   liveReservoir?: LiveReservoirSnapshot;
   liveStatus: LiveFeedStatus;
-  dailySignals: Array<{
-    day: number;
-    rainfall: number;
-    drought: boolean;
-    total_allocated: number;
-    depletion_risk: number;
-    gini: number;
-  }>;
+  dailySignals: DaySignal[];
   objective: {
     purpose: string;
     beneficiaries: string[];

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardState, LiveFeedStatus } from "./types";
+import type { DashboardState, LiveFeedStatus, PolicyControls, ProvinceQuotaInputs } from "./types";
 import { clamp } from "./utils";
 import { createInitialState } from "./mockData";
 import {
@@ -16,6 +16,45 @@ import {
   type SimulationRequest,
   type SimulationResponse
 } from "./api";
+
+const defaultProvinceQuotas: ProvinceQuotaInputs = {
+  Punjab: 0.48,
+  Sindh: 0.38,
+  "Khyber Pakhtunkhwa": 0.09,
+  Balochistan: 0.05
+};
+
+const defaultPolicyControls: PolicyControls = {
+  sustainabilityThresholdPct: 20,
+  quotaMode: "share",
+  provinceQuotas: defaultProvinceQuotas
+};
+
+const sanitizeProvinceQuotas = (quotas: ProvinceQuotaInputs): ProvinceQuotaInputs => {
+  const sanitize = (value: number) => (Number.isFinite(value) ? Math.max(0, value) : 0);
+  return {
+    Punjab: sanitize(quotas.Punjab),
+    Sindh: sanitize(quotas.Sindh),
+    "Khyber Pakhtunkhwa": sanitize(quotas["Khyber Pakhtunkhwa"]),
+    Balochistan: sanitize(quotas.Balochistan)
+  };
+};
+
+const applyPolicyControls = (request: SimulationRequest, controls: PolicyControls): SimulationRequest => {
+  const cleanedQuotas = sanitizeProvinceQuotas(controls.provinceQuotas);
+  const quotaTotal = Object.values(cleanedQuotas).reduce((sum, value) => sum + value, 0);
+  const provinceQuotas = quotaTotal > 0 ? cleanedQuotas : defaultProvinceQuotas;
+
+  return {
+    ...request,
+    config: {
+      ...request.config,
+      sustainability_threshold: Number(clamp(controls.sustainabilityThresholdPct / 100, 0.05, 0.9).toFixed(3)),
+      quota_mode: controls.quotaMode,
+      province_quotas: provinceQuotas
+    }
+  };
+};
 
 const deriveClimateForecast = (daily: SimulationResponse["primary"]["daily"]) => {
   const recent = daily.slice(-7);
@@ -278,6 +317,7 @@ export const useBackendData = () => {
   const [scenario, setScenario] = useState(base.scenario);
   const [pakistanPreset, setPakistanPreset] = useState<SimulationRequest | null>(null);
   const [weather, setWeather] = useState<PakistanWeatherResponse | null>(null);
+  const [policyControls, setPolicyControls] = useState<PolicyControls>(defaultPolicyControls);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -359,6 +399,16 @@ export const useBackendData = () => {
 
         if (!active) return;
 
+        request = applyPolicyControls(
+          {
+            ...request,
+            policy: pakistanPolicy,
+            compare_policies: false
+          },
+          policyControls
+        );
+        response = await runSimulationRequest(request);
+
         const liveStatus = deriveLiveStatus(liveDamData, usedPresetFallback);
         const mapped = mapSimulationToDashboard(
           response,
@@ -390,7 +440,7 @@ export const useBackendData = () => {
       active = false;
       clearInterval(interval);
     };
-  }, [base.scenarios, pakistanPreset, scenario, weather]);
+  }, [base.scenarios, pakistanPreset, policyControls, scenario, weather]);
 
   const updateSelectedDayIndex = (nextIndex: number | null) => {
     setSelectedDayIndex(nextIndex);
@@ -402,9 +452,16 @@ export const useBackendData = () => {
     setData((prev) => ({ ...prev, scenario: nextScenario }));
   };
 
+  const updatePolicyControls = (nextControls: PolicyControls) => {
+    setPolicyControls(nextControls);
+    setSelectedDayIndex(null);
+  };
+
   return {
     data,
     setScenario: updateScenario,
+    policyControls,
+    setPolicyControls: updatePolicyControls,
     status,
     error,
     selectedDayIndex: selectedDayIndex ?? Math.max(data.reservoirTimeline.length - 1, 0),

@@ -277,6 +277,25 @@ class PakistanLiveDamResponse(BaseModel):
     notes: List[str] = Field(default_factory=list)
 
 
+class PakistanLiveHistorySnapshot(BaseModel):
+    source: str
+    fetched_at_utc: str
+    updated_at_pkt: Optional[str] = None
+    stations: List[LiveDamStation]
+    notes: List[str] = Field(default_factory=list)
+    data_quality: str = Field(min_length=1)
+    sample_count: int = Field(ge=0)
+
+
+class PakistanLiveHistoryResponse(BaseModel):
+    source: str
+    requested_days: int = Field(ge=1, le=365)
+    data_quality: str = Field(min_length=1)
+    sample_count: int = Field(ge=0)
+    last_success_at: Optional[str] = None
+    snapshots: List[PakistanLiveHistorySnapshot]
+
+
 class PakistanLiveSimulationResponse(BaseModel):
     live_data: PakistanLiveDamResponse
     request: SimulationRequest
