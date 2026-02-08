@@ -2,6 +2,10 @@
 
 AI-assisted water allocation simulation for climate-resilient agriculture in Pakistan.
 
+## Team
+Team Name: VizMinds  
+Team Members: Muneeb Ahmed Khan, Abdullah, Ayna Khan
+
 ## Project Goal
 AquaNexus is a decision-support platform, not an autonomous controller.  
 Its goal is to help compare water allocation policies under scarcity and uncertainty by balancing:
