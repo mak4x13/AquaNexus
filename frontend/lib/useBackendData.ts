@@ -56,6 +56,51 @@ const applyPolicyControls = (request: SimulationRequest, controls: PolicyControl
   };
 };
 
+const applyScenarioTuning = (request: SimulationRequest, scenario: string): SimulationRequest => {
+  const config = request.config;
+
+  const scale = (value: number, factor: number) => Number((value * factor).toFixed(3));
+  const cap = (value: number, min: number, max: number) => Number(clamp(value, min, max).toFixed(3));
+
+  if (scenario === "Yield Max") {
+    return {
+      ...request,
+      config: {
+        ...config,
+        max_daily_allocation: scale(config.max_daily_allocation, 1.25),
+        sustainability_threshold: cap(config.sustainability_threshold * 0.8, 0.05, 0.9),
+        drought_demand_reduction: cap(config.drought_demand_reduction * 0.7, 0, 1),
+      },
+    };
+  }
+
+  if (scenario === "Conservation") {
+    return {
+      ...request,
+      config: {
+        ...config,
+        max_daily_allocation: scale(config.max_daily_allocation, 0.75),
+        sustainability_threshold: cap(config.sustainability_threshold * 1.35, 0.1, 0.95),
+        drought_demand_reduction: cap(config.drought_demand_reduction * 1.2, 0, 1),
+      },
+    };
+  }
+
+  if (scenario === "Equity First") {
+    return {
+      ...request,
+      config: {
+        ...config,
+        fairness_weight: cap(0.8, 0, 1),
+        quota_mode: "share",
+        max_daily_allocation: scale(config.max_daily_allocation, 0.9),
+      },
+    };
+  }
+
+  return request;
+};
+
 const deriveClimateForecast = (daily: SimulationResponse["primary"]["daily"]) => {
   const recent = daily.slice(-7);
   if (recent.length === 0) {
@@ -399,14 +444,16 @@ export const useBackendData = () => {
 
         if (!active) return;
 
-        request = applyPolicyControls(
+        request = applyScenarioTuning(
           {
             ...request,
             policy: pakistanPolicy,
-            compare_policies: false
+            compare_policies: false,
           },
-          policyControls
+          scenario
         );
+
+        request = applyPolicyControls(request, policyControls);
         response = await runSimulationRequest(request);
 
         const liveStatus = deriveLiveStatus(liveDamData, usedPresetFallback);
